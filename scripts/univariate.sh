@@ -5,6 +5,8 @@ set -e -u -x
 
 # Parse arguments from the job scheduler as variables
 deriv_dir=$1
+# analy_dir=$2
+analy_dir="/ptmp/kazma/SLANG-CROSS-analysis"
 
 # Load Apptainer for running containerized commands
 module load apptainer
@@ -17,16 +19,13 @@ conda activate SLANG
 bids_dir="$deriv_dir/.."
 cd "$bids_dir"
 
-# Run the univariate analysis
-datalad containers-run \
-  --container-name "python-julia-afni" \
-  --dataset "$bids_dir" \
-  --input "sub-*" \
-  --input "$deriv_dir/fmriprep/sub-*/ses-*/" \
-  --output "$deriv_dir/univariate" \
-  --message "Run univariate analysis" \
-  --explicit "\
-python3 $deriv_dir/code/scripts/univariate.py"
+neurodesk_container="$analy_dir/containers/neurodesk.simg"
+
+apptainer exec --cleanenv \
+  -B "$bids_dir":"$bids_dir" \
+  -B "$analy_dir":"$analy_dir" \
+  "$neurodesk_container" \
+  python "$analy_dir/scripts/univariate.py"
 
 # And we're done
 echo SUCCESS
