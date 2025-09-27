@@ -1,0 +1,5 @@
+{
+    "bids_dir": "/ptmp/kazma/SLANG-CROSS-conversion",
+    "conda_env": "/viper/ptmp/kazma/miniforge3/etc/profile.d/conda.sh",
+    "conda_env_name": "nilearn_glm"
+}

@@ -53,130 +53,11 @@ CONTRASTS      = ['images_words - images_pseudo',
                   'images_words', 
                   'audios_words',
                   'images_pseudo',
-                  'audios_pseudo']
+                  'audios_pseudo',
+                  '(images_words + audios_words) - (images_pseudo + audios_pseudo)']
 
 
-
-
-# %%
-# === Prepare First-level GLM ===
-layout       = BIDSLayout(BIDS_DIR, derivatives=FMRIPRE_DIR, database_path=PYBIDS_DIR)
-# Event files
-events_files = layout.get(subject=SUBJECT, session=SESSION, task=TASK,
-                            suffix='events', extension='tsv')
-# Mask files
-mask_files   = layout.get(subject=SUBJECT, session=SESSION, task=TASK,
-                            space=SPACE, desc='brain', suffix='mask',
-                            extension='nii.gz')
-# Functional runs
-func_files   = layout.get(subject=SUBJECT, session=SESSION, task=TASK,
-                            space=SPACE, desc='preproc', suffix='bold',
-                            extension='nii.gz')
-
-# confounds
-con_files    = layout.get(subject=SUBJECT, session=SESSION, task=TASK,
-                                desc='confounds', suffix='timeseries',
-                                extension='tsv')
-
-# Create output folder
-out_dir = Path(f"{DERIV_DIR}/sub-{SUBJECT}/glm/{SPACE}")
-os.makedirs(out_dir, exist_ok=True)
-
-# create a brain mask combined across runs
-mask_imgs = [f.path for f in mask_files]
-x = combine_save_mask_imgs(mask_imgs, out_dir, TASK, SPACE,
-                           perc_threshold=0.5)
-masks_sum = load_img(str(x[1]))
-
-# %%
-# === Prepare First-level GLM for a run ===
-# contrast = 'images_words - images_pseudo'
-for contrast in CONTRASTS: 
-    print(f"\nTarget contrast: {contrast}...\n")
-    contrast_imgs = [] # store effect size for each run
-    variance_imgs = [] # store effect variance for each run
-
-    # n_run = 0
-    for n_run in range(len(func_files)):
-        print(f"\nProcessing run {n_run+1}/{len(func_files)}...\n")
-
-        # functional file
-        func_img    = load_img(func_files[n_run].path)
-
-        # frame time
-        frame_times = make_frame_times(layout, func_img)
-
-        # event file
-        events = pd.read_csv(events_files[n_run].path, sep='\t')
-        trial_types_to_model = CONDITION # Keep only the trial types you want as regressors
-        events_filtered = events[events['trial_type'].isin(trial_types_to_model)]
-
-        # confound file
-        confounds = pd.read_csv(con_files[n_run].path, sep='\t')
-        non_steady_cols = [col for col in confounds
-                            if col.startswith('non_steady_state_outlier')]
-        outlier_cols    = [col for col in confounds
-                            if col.startswith('motion_outlier')]
-        cols = MOV_COLS + COMPCOR_COLS + non_steady_cols + outlier_cols
-        confounds = confounds[cols]
-
-        # mask file
-        mask_img = load_img(mask_files[n_run].path)
-
-
-        # generate design matrix
-        design_matrix = make_first_level_design_matrix(frame_times,
-                                                        events=events_filtered,
-                                                        drift_model=DRIFT_MODEL, # high-pass filter (~128s)
-                                                        high_pass=HIGH_PASS, 
-                                                        hrf_model=HRF_MODEL,   
-                                                        add_regs=confounds,
-                                                        add_reg_names=confounds.columns.tolist()) # extra regressors
-
-        # save the figure of design matrix
-        """ ax  = plot_design_matrix(design_matrix)
-        fig = ax.get_figure()
-        fig.savefig('design_matrix.png', dpi=300)  # PNG with 300 dpi """
-
-        # === Initialize First-level GLM for a run ===
-        fmri_glm = FirstLevelModel(  
-            standardize=STANDARDIZE, # percent signal change
-            smoothing_fwhm=SMOOTHING_FWHM,
-            n_jobs=N_JOBS,
-            mask_img=mask_img,
-            minimize_memory=False
-        )
-
-
-        # 
-        # === Run GLM ===
-        fmri_glm.fit(run_imgs=func_img, design_matrices=[design_matrix])
-
-        # 
-        # === Summary of the GLM ===
-        summary_stats = fmri_glm.compute_contrast(contrast, output_type='all')
-        contrast_imgs.append(summary_stats["effect_size"])
-        variance_imgs.append(summary_stats["effect_variance"])
-
-        # LOOP END
-
-    #
-    # === subject level effect size ===
-    fixed_fx_contrast, fixed_fx_variance, fixed_fx_stat = compute_fixed_effects(
-        contrast_imgs, variance_imgs, mask=masks_sum)
-
-    # save in the outdir
-    contrast_no_space = contrast.replace(' ', '')
-    output_beta       = Path(f"{out_dir}/{contrast_no_space}_beta.nii.gz")
-    output_tstat      = Path(f"{out_dir}/{contrast_no_space}_tstat.nii.gz")
-    output_var        = Path(f"{out_dir}/{contrast_no_space}_var.nii.gz")
-
-    fixed_fx_contrast.to_filename(output_beta)
-    fixed_fx_variance.to_filename(output_tstat)
-    fixed_fx_stat.to_filename(output_var)
-
-# %%
-# import user-defined functions
+# === import user-defined functions ====
 def load_mask_img(layout, subject, session, task, space):
     """Loads the preprocessed brain mask for a given subject and session."""
 
@@ -320,4 +201,135 @@ def save_img(img, output_dir, task, space, desc, suffix,
 
     return file
 
-# %%
+
+
+# === Prepare First-level GLM ===
+layout       = BIDSLayout(BIDS_DIR, derivatives=FMRIPRE_DIR, database_path=PYBIDS_DIR)
+
+# Get all subject list
+subjects = layout.get_subjects()  # returns a list like ['01', '02', '03', ...]
+
+
+for subject in subjects:
+    print(f"\nProcessing subject {subject}...\n")
+
+    # Event files
+    events_files = layout.get(subject=subject, session=SESSION, task=TASK,
+                                suffix='events', extension='tsv')
+    # Mask files
+    mask_files   = layout.get(subject=subject, session=SESSION, task=TASK,
+                                space=SPACE, desc='brain', suffix='mask',
+                                extension='nii.gz')
+    # Functional runs
+    func_files   = layout.get(subject=subject, session=SESSION, task=TASK,
+                                space=SPACE, desc='preproc', suffix='bold',
+                                extension='nii.gz')
+
+    # confounds
+    con_files    = layout.get(subject=subject, session=SESSION, task=TASK,
+                                    desc='confounds', suffix='timeseries',
+                                    extension='tsv')
+
+    # Create output folder
+    out_dir = Path(f"{DERIV_DIR}/sub-{subject}/glm/{SPACE}")
+    os.makedirs(out_dir, exist_ok=True)
+
+    # create a brain mask combined across runs
+    mask_imgs = [f.path for f in mask_files]
+    x = combine_save_mask_imgs(mask_imgs, out_dir, TASK, SPACE,
+                            perc_threshold=0.5)
+    masks_sum = load_img(str(x[1]))
+
+    # === Prepare First-level GLM for a run ===
+    # contrast = 'images_words - images_pseudo'
+    for contrast in CONTRASTS: 
+        print(f"\nTarget contrast: {contrast}...\n")
+        contrast_imgs = [] # store effect size for each run
+        variance_imgs = [] # store effect variance for each run
+
+        # n_run = 0
+        for n_run in range(len(func_files)):
+            print(f"\nProcessing run {n_run+1}/{len(func_files)}...\n")
+
+            # functional file
+            func_img    = load_img(func_files[n_run].path)
+
+            # frame time
+            frame_times = make_frame_times(layout, func_img)
+
+            # event file
+            events = pd.read_csv(events_files[n_run].path, sep='\t')
+            trial_types_to_model = CONDITION # Keep only the trial types you want as regressors
+            events_filtered = events[events['trial_type'].isin(trial_types_to_model)]
+
+            # confound file
+            confounds = pd.read_csv(con_files[n_run].path, sep='\t')
+            non_steady_cols = [col for col in confounds
+                                if col.startswith('non_steady_state_outlier')]
+            outlier_cols    = [col for col in confounds
+                                if col.startswith('motion_outlier')]
+            comp_cols       = [col for col in confounds
+                                if col.startswith('a_comp')]
+            comp_cols       = comp_cols[:len(COMPCOR_COLS)]
+            if len(comp_cols) < len(COMPCOR_COLS):
+                print(f"\nOnly found {len(comp_cols)} a_comp columns, expected 6. Continuing anyway.\n")
+
+            cols = MOV_COLS + comp_cols + non_steady_cols + outlier_cols
+            confounds = confounds[cols]
+
+            # mask file
+            mask_img = load_img(mask_files[n_run].path)
+
+
+            # generate design matrix
+            design_matrix = make_first_level_design_matrix(frame_times,
+                                                            events=events_filtered,
+                                                            drift_model=DRIFT_MODEL, # high-pass filter (~128s)
+                                                            high_pass=HIGH_PASS, 
+                                                            hrf_model=HRF_MODEL,   
+                                                            add_regs=confounds,
+                                                            add_reg_names=confounds.columns.tolist()) # extra regressors
+
+            # save the figure of design matrix
+            """ ax  = plot_design_matrix(design_matrix)
+            fig = ax.get_figure()
+            fig.savefig('design_matrix.png', dpi=300)  # PNG with 300 dpi """
+
+            # === Initialize First-level GLM for a run ===
+            fmri_glm = FirstLevelModel(  
+                standardize=STANDARDIZE, # percent signal change
+                smoothing_fwhm=SMOOTHING_FWHM,
+                n_jobs=N_JOBS,
+                mask_img=mask_img,
+                minimize_memory=False
+            )
+
+
+            # 
+            # === Run GLM ===
+            fmri_glm.fit(run_imgs=func_img, design_matrices=[design_matrix])
+
+            # 
+            # === Summary of the GLM ===
+            summary_stats = fmri_glm.compute_contrast(contrast, output_type='all')
+            contrast_imgs.append(summary_stats["effect_size"])
+            variance_imgs.append(summary_stats["effect_variance"])
+
+            # LOOP END
+
+        #
+        # === subject level effect size ===
+        fixed_fx_contrast, fixed_fx_variance, fixed_fx_stat = compute_fixed_effects(
+            contrast_imgs, variance_imgs, mask=masks_sum)
+
+        # save in the outdir
+        contrast_no_space = contrast.replace(' ', '').replace('(', '').replace(')', '')
+        output_beta       = Path(f"{out_dir}/{contrast_no_space}_beta.nii.gz")
+        output_tstat      = Path(f"{out_dir}/{contrast_no_space}_tstat.nii.gz")
+        output_var        = Path(f"{out_dir}/{contrast_no_space}_var.nii.gz")
+
+        fixed_fx_contrast.to_filename(output_beta)
+        fixed_fx_variance.to_filename(output_tstat)
+        fixed_fx_stat.to_filename(output_var)
+
+

@@ -1,3 +1,5 @@
 # Ignore the containers directory
 derivatives/
 containers/
+logs/
+scripts/__pycache__/
