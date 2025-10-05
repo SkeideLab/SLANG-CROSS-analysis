@@ -5,7 +5,6 @@ set -e -u -x
 
 # Parse arguments from the job scheduler as variables
 bids_dir=$1
-# analy_dir=$2
 analy_dir=$2
 conda_env=$3
 conda_env_name=$4

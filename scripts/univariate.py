@@ -55,6 +55,7 @@ CONTRASTS      = ['images_words - images_pseudo',
                   'images_pseudo',
                   'audios_pseudo',
                   '(images_words + audios_words) - (images_pseudo + audios_pseudo)']
+EXC_SUBJECTS   = ['108', '113', '116', '122', '125', '126', '206', '220', '227', '405', '410', '421','424', '427', '430']
 
 
 # === import user-defined functions ====
@@ -211,6 +212,9 @@ subjects = layout.get_subjects()  # returns a list like ['01', '02', '03', ...]
 
 
 for subject in subjects:
+    if subject in EXC_SUBJECTS:
+        continue
+    
     print(f"\nProcessing subject {subject}...\n")
 
     # Event files
