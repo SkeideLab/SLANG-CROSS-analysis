@@ -16,6 +16,6 @@ conda_env_name = run_params['conda_env_name']
 # %%
 script = script_dir / 'univariate.sh'
 args = [script, bids_dir, analy_dir, conda_env, conda_env_name]
-job_id = submit_job(args, cpus=1, mem=24000,log_dir=log_dir,
+job_id = submit_job(args, cpus=3, mem=24000,log_dir=log_dir,
                     job_name='univariate')
 # %%

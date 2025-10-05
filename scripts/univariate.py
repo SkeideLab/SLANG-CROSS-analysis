@@ -57,7 +57,7 @@ CONTRASTS      = ['images_words - images_pseudo',
                   '(images_words + audios_words) - (images_pseudo + audios_pseudo)']
 EXC_SUBJECTS   = ['108', '113', '116', '122', '125', '126', '206', '220', '227', '405', '410', '421','424', '427', '430']
 
-
+# %%
 # === import user-defined functions ====
 def load_mask_img(layout, subject, session, task, space):
     """Loads the preprocessed brain mask for a given subject and session."""
@@ -203,13 +203,12 @@ def save_img(img, output_dir, task, space, desc, suffix,
     return file
 
 
-
-# === Prepare First-level GLM ===
-layout       = BIDSLayout(BIDS_DIR, derivatives=FMRIPRE_DIR, database_path=PYBIDS_DIR)
+# %%
+## === Prepare First-level GLM ===
+layout   = BIDSLayout(BIDS_DIR, derivatives=FMRIPRE_DIR, database_path=PYBIDS_DIR, validate=True, reset_database=True)
 
 # Get all subject list
 subjects = layout.get_subjects()  # returns a list like ['01', '02', '03', ...]
-
 
 for subject in subjects:
     if subject in EXC_SUBJECTS:
