@@ -11,6 +11,9 @@ from matplotlib.colors import to_rgba
 from scipy import stats
 import statsmodels.api as sm
 from statsmodels.stats.multicomp import pairwise_tukeyhsd
+from ddm import Model, Fittable
+from ddm.models import DriftConstant, NoiseConstant, BoundConstant, ICPoint, OverlayNonDecision
+from ddm import Sample
 # %%
 # ===  Parameters ===
 THRESHOLD    = 2
@@ -21,7 +24,7 @@ SUBJECT      = 'sub-101'
 MODEL        = 'glm'
 SPACE        = 'MNI152NLin2009cAsym'
 MODALITY     = 'audio' # all, visual, audio
-EXC_SUBJECTS = ['108', '111', '113', '116', '118', '120', '121', '122', '124', '125', '126', '128', '201', '206', '208', '220', '227', '405', '406', '408', '410', '421', '422', '424', '427', '430']
+EXC_SUBJECTS = ['108', '111', '113', '116', '118', '120', '121', '122', '124', '125', '126', '128', '201', '205', '206', '208', '220', '225', '226', '227', '405', '406', '408', '409', '410', '421', '422', '424', '427', '430', '434']
 
 # make a figure directory
 FIG_DIR.mkdir(parents=True, exist_ok=True)
@@ -66,16 +69,32 @@ for subject in subjects_filtered:
 df          = pd.concat(all_dfs, ignore_index=True)
 df['grade'] = df['subject'].str.replace('sub-','').astype(str).str[0].astype(int)
 df['run']   = df['file_name'].str.extract(r'run-(\d+)_events').astype(int)
+if MODALITY == 'all':
+    df          = df[df['accuracy_all'] != -1]
+    df          = df[df['accuracy_all'] != 0]
+elif MODALITY == 'visual':
+    df          = df[df['accuracy_visual'] != -1]
+    df          = df[df['accuracy_visual'] != 0]
+elif MODALITY == 'audio':
+    df          = df[df['accuracy_audio'] != -1]
+    df          = df[df['accuracy_audio'] != 0]
+else:
+    raise ValueError(f"Unknown MODALITY: {MODALITY}")
 
 # test whether the average is above chance
 acc_str = f"accuracy_{MODALITY}"
 rt_str = f"RT_{MODALITY}"
+dprime_str=f"dprime_{MODALITY}"
+c_str=f"c_{MODALITY}"
 mean = df.groupby('subject').agg(
     mean_accuracy=(acc_str, 'mean'),
     mean_RT=(rt_str, 'mean'),
+    mean_dprime=(dprime_str, 'mean'),
+    mean_c=(c_str, 'mean'),
     grade=('grade', 'first')
 ).reset_index()
 
+# %%
 # === One-sample T-test ===
 # create an empty list to store results
 results = []
@@ -114,6 +133,16 @@ print(f"F = {f_stat:.3f}, p = {p_value:.4f}")
 tukey = pairwise_tukeyhsd(endog=mean['mean_RT'], groups=mean['grade'], alpha=0.05)
 print(tukey)
 
+# d prime
+groups = [mean.loc[mean['grade'] == g, 'mean_dprime'] for g in mean['grade'].unique()]
+f_stat, p_value = stats.f_oneway(*groups)
+print("\nOne-way ANOVA")
+print("Variable: dprime")
+print(f"Modality: {MODALITY}")
+print(f"F = {f_stat:.3f}, p = {p_value:.4f}")
+tukey = pairwise_tukeyhsd(endog=mean['mean_dprime'], groups=mean['grade'], alpha=0.05)
+print(tukey)
+
 # %% 
 # === Scatter plot ===
 # === Accuracy ===
@@ -135,7 +164,7 @@ sns.stripplot(
 plt.title('Accuracy by Grade and Run')
 plt.ylabel('Accuracy (%)')
 plt.xlabel('Grade')
-plt.ylim(0,100)
+# plt.ylim(0,100)
 plt.legend(title='Run', bbox_to_anchor=(1.01, 1), loc='upper left')
 plt.savefig(f"{FIG_DIR}/{acc_str}_scatter.png", dpi=300, bbox_inches='tight')
 
@@ -157,9 +186,32 @@ sns.stripplot(
 plt.title('Reaction Time by Grade and Run')
 plt.ylabel('Reaction time (s)')
 plt.xlabel('Grade')
-plt.ylim(0,4)
+# plt.ylim(0,4)
 plt.legend(title='Run', bbox_to_anchor=(1.01, 1), loc='upper left')
 plt.savefig(f"{FIG_DIR}/{rt_str}_scatter.png", dpi=300, bbox_inches='tight')
+
+
+# === dprime ===
+sns.set(style="whitegrid")
+# Bar plot with grade on x-axis, accuracy on y-axis, hue=run
+plt.figure(figsize=(8,6))
+sns.stripplot(
+    data=df,
+    x='grade', 
+    y=dprime_str, 
+    hue='run',
+    jitter=True,       # spreads dots horizontally for visibility
+    dodge=True,        # separates runs side-by-side
+    palette='Set2',
+    size=6,            # size of the dots
+)
+
+plt.title("Sensitivity (d') by Grade and Run")
+plt.ylabel("d'")
+plt.xlabel('Grade')
+# plt.ylim(0,4)
+plt.legend(title='Run', bbox_to_anchor=(1.01, 1), loc='upper left')
+plt.savefig(f"{FIG_DIR}/{dprime_str}_scatter.png", dpi=300, bbox_inches='tight')
 
 
 # %% 
@@ -212,5 +264,29 @@ plt.yticks([0, 1, 2, 3, 4])
 # plt.tight_layout()
 plt.grid(False)
 plt.savefig(f"{FIG_DIR}/{rt_str}_violin.png", dpi=300, bbox_inches='tight')
+plt.show()
+
+
+# === dprime ===
+plt.figure(figsize=(8,6))
+sns.violinplot(
+    data=mean,
+    x='grade',
+    y='mean_dprime',
+    inner='quartile',
+    split=False,
+    palette='Set2',
+    cut=0,
+    legend=False,
+    alpha=0.4
+)
+
+plt.title("Sensitivity (d') Distribution by Grade")
+plt.xlabel('Grade')
+plt.ylabel("d'")
+# plt.ylim(0, 4)
+# plt.tight_layout()
+plt.grid(False)
+plt.savefig(f"{FIG_DIR}/{dprime_str}_violin.png", dpi=300, bbox_inches='tight')
 plt.show()
 # %%

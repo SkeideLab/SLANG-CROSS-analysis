@@ -3,6 +3,8 @@
 from pathlib import Path
 from bids import BIDSLayout
 import pandas as pd
+from scipy.stats import norm
+import numpy as np
 
 # %%
 # ===  Parameters ===
@@ -10,10 +12,9 @@ BIDS_DIR     = Path('/ptmp/kazma/SLANG-CROSS-conversion')
 FMRIPRE_DIR  = BIDS_DIR / 'derivatives/fmriprep'
 ANALY_DIR    = Path('/ptmp/kazma/SLANG-CROSS-analysis')
 DERIV_DIR    = ANALY_DIR / 'derivatives'
-MODALITY     = 'all' # visual, audio, or all
 SESSION      = '01'
 TASK         = 'language'
-EXC_SUBJECTS = ['108', '111', '113', '116', '118', '120', '121', '122', '124', '125', '126', '128', '201', '206', '208', '220', '227', '405', '406', '408', '410', '421', '422', '424', '427', '430']
+EXC_SUBJECTS = ['108', '111', '113', '116', '118', '120', '121', '122', '124', '125', '126', '128', '201', '205', '206', '208', '220', '225', '226', '227', '405', '406', '408', '409', '410', '421', '422', '424', '427', '430', '434']
 
 # %%
 # === Get the BIDS layout
@@ -22,6 +23,7 @@ subjects          = layout.get_subjects()  # returns a list like ['01', '02', '0
 subjects_filtered = [s for s in subjects if s not in EXC_SUBJECTS]
 
 # %%
+# Accuracy and RT
 # === read event file for each run ===
 for subject in subjects_filtered:
 
@@ -30,20 +32,29 @@ for subject in subjects_filtered:
                                 suffix='events', extension='tsv')
     n_event      = len(events_files)
 
-    # empty list
+    # ALL: empty list
     acc_ls_all       = []
     RT_ls_all        = []
     f_name_ls_all    = []
+    dprime_ls_all    = []
+    c_ls_all         = []
+    beta_ls_all      = []
 
-    # empty list for visual modality
+    # VISUAL: empty list
     acc_ls_visual    = []
     RT_ls_visual     = []
     f_name_ls_visual = []
+    dprime_ls_visual = []
+    c_ls_visual      = []
+    beta_ls_visual   = []
 
-   # empty list for audio modality
+   # AUDIO: empty list
     acc_ls_audio     = []
     RT_ls_audio      = []
     f_name_ls_audio  = []
+    dprime_ls_audio  = []
+    c_ls_audio       = []
+    beta_ls_audio    = []
 
 
     for i in range(n_event):
@@ -51,24 +62,71 @@ for subject in subjects_filtered:
         f_name = file.filename
         df     = pd.read_csv(file, sep='\t')
 
-        # ===  Get the accuracy for all ===
-        total  = df['trial_type'].isin(['response_c', 'response_d']).sum()
+        # ===  ALL: Accuracy ===
+        responses  = df['trial_type'].isin(['response_c', 'response_d']).sum()
+        # here counts the number of tasks as total
+        total  = df['trial_type'].isin(['images_words', 'images_pseudo', 'audios_words', 'audios_pseudo']).sum()
         corre  = (df['correct'] == True).sum()
-        if total > 0:
+        if responses > total/2:
             acc  = (corre / total) * 100
             acc  = int(acc)
-        else:
-            acc = 0
 
-        # === Get the RT for all ===
+            # === ALL: SDT ===
+            df_filtered = df[~df['trial_type'].isin(['feedback_correct', 'feedback_incorrect'])]
+
+            # Create a boolean mask for previous trial starting with 'images'
+            mask_prev_words       = df_filtered['trial_type'].shift(1).str.endswith('words')
+            mask_prev_pseudowords = df_filtered['trial_type'].shift(1).str.endswith('pseudo')
+
+            # Create a boolean mask for response_c or response_d
+            mask_correct   = df_filtered['correct']==True
+            mask_incorrect = df_filtered['correct']==False
+
+            # create a mask for each 
+            mask_hit = mask_correct & mask_prev_words
+            mask_miss = mask_incorrect & mask_prev_words
+            mask_false_alarm = mask_incorrect & mask_prev_pseudowords
+            mask_correct_rejection = mask_correct & mask_prev_pseudowords
+
+            # value for each parameter
+            hit               = mask_hit.sum()
+            miss              = mask_miss.sum()
+            false_alarm       = mask_false_alarm.sum()
+            correct_rejection = mask_correct_rejection.sum()
+
+            # Adjusted hit and false alarm rates
+            hit_rate = (hit + 0.5) / (hit + miss + 1)
+            fa_rate  = (false_alarm + 0.5) / (false_alarm + correct_rejection + 1)
+
+            # Compute z-scores
+            z_hit = norm.ppf(hit_rate)
+            z_fa = norm.ppf(fa_rate)
+
+            # Compute SDT metrics
+            d_prime = z_hit - z_fa
+            c = -0.5 * (z_hit + z_fa)
+            beta = np.exp((z_fa**2 - z_hit**2) / 2)
+
+        else:
+            acc     = -1
+            d_prime = -1
+            c       = -1
+            beta    = -1
+
+        # === ALL: RT ===
         avg_rt = round(df.loc[df['correct'] == True, 'rt'].mean(), 2)
         
-        # store accuracy and RT in a list
+        # === ALL: Accuracy, RT, SDT ===
         acc_ls_all.append(acc)
         f_name_ls_all.append(f_name)
         RT_ls_all.append(avg_rt)
+        dprime_ls_all.append(d_prime)
+        c_ls_all.append(c)
+        beta_ls_all.append(beta)
 
-        # === Get the accuracy for visual ===
+
+
+        # === VISUAL: Accuracy ===
         # Filter out unwanted rows
         df_filtered = df[~df['trial_type'].isin(['feedback_correct', 'feedback_incorrect'])]
 
@@ -81,53 +139,148 @@ for subject in subjects_filtered:
         # Combine masks: only keep rows where both conditions are True
         mask = mask_response & mask_prev_images
         df_filtfilt = df_filtered[mask]
-        total  = df_filtfilt['trial_type'].isin(['response_c', 'response_d']).sum()
+        responses  = df_filtfilt['trial_type'].isin(['response_c', 'response_d']).sum()
+        total  = df['trial_type'].isin(['images_words', 'images_pseudo']).sum()
         corre  = (df_filtfilt['correct'] == True).sum()
-        if total > 0:
+        if responses > total/2:
             acc  = (corre / total) * 100
             acc  = int(acc)
-        else:
-            acc = 0
 
-        # === Get the RT for visual ===
+            # === VISUAL: SDT ===
+            # Create a boolean mask for previous trial starting with 'images'
+            mask_prev_words       = df_filtered['trial_type'].shift(1).str.endswith('images_words')
+            mask_prev_pseudowords = df_filtered['trial_type'].shift(1).str.endswith('images_pseudo')
+
+            # Create a boolean mask for response_c or response_d
+            mask_correct   = df_filtfilt['correct']==True
+            mask_incorrect = df_filtfilt['correct']==False
+
+            # create a mask for each 
+            mask_hit = mask_correct & mask_prev_words
+            mask_miss = mask_incorrect & mask_prev_words
+            mask_false_alarm = mask_incorrect & mask_prev_pseudowords
+            mask_correct_rejection = mask_correct & mask_prev_pseudowords
+
+            # value for each parameter
+            hit               = mask_hit.sum()
+            miss              = mask_miss.sum()
+            false_alarm       = mask_false_alarm.sum()
+            correct_rejection = mask_correct_rejection.sum()
+
+            # Adjusted hit and false alarm rates
+            hit_rate = (hit + 0.5) / (hit + miss + 1)
+            fa_rate  = (false_alarm + 0.5) / (false_alarm + correct_rejection + 1)
+
+            # Compute z-scores
+            z_hit = norm.ppf(hit_rate)
+            z_fa = norm.ppf(fa_rate)
+
+            # Compute SDT metrics
+            d_prime = z_hit - z_fa
+            c = -0.5 * (z_hit + z_fa)
+            beta = np.exp((z_fa**2 - z_hit**2) / 2)
+        else:
+            acc     = -1
+            d_prime = -1
+            c       = -1
+            beta    = -1
+
+        # === VISUAL: RT ===
         avg_rt = round(df_filtfilt.loc[df_filtfilt['correct'] == True, 'rt'].mean(), 2)
         
-        # store accuracy and RT in a list
+        # === VISUAL: Accuracy, RT, SDT ===
         acc_ls_visual.append(acc)
         RT_ls_visual.append(avg_rt)
+        dprime_ls_visual.append(d_prime)
+        c_ls_visual.append(c)
+        beta_ls_visual.append(beta)
 
-        # === Get the accuracy for visual ===
+
+
+        # === AUDIO: Accuracy ===
         # Create a boolean mask for previous trial starting with 'images'
         mask_prev_images = df_filtered['trial_type'].shift(1).str.startswith('audios')
 
         # Combine masks: only keep rows where both conditions are True
-        mask = mask_response & mask_prev_images
+        mask        = mask_response & mask_prev_images
         df_filtfilt = df_filtered[mask]
-        total  = df_filtfilt['trial_type'].isin(['response_c', 'response_d']).sum()
-        corre  = (df_filtfilt['correct'] == True).sum()
-        if total > 0:
+        responses   = df_filtfilt['trial_type'].isin(['response_c', 'response_d']).sum()
+        total       = df['trial_type'].isin(['audios_words', 'audios_pseudo']).sum()
+        corre       = (df_filtfilt['correct'] == True).sum()
+
+        if responses > total/2:
             acc  = (corre / total) * 100
             acc  = int(acc)
-        else:
-            acc = 0
 
-        # === Get the RT for visual ===
+            # === AUDIO: SDT ===
+
+            # Create a boolean mask for previous trial starting with 'images'
+            mask_prev_words       = df_filtered['trial_type'].shift(1).str.endswith('audios_words')
+            mask_prev_pseudowords = df_filtered['trial_type'].shift(1).str.endswith('audios_pseudo')
+
+            # Create a boolean mask for response_c or response_d
+            mask_correct   = df_filtered['correct']==True
+            mask_incorrect = df_filtered['correct']==False
+
+            # create a mask for each 
+            mask_hit               = mask_correct & mask_prev_words
+            mask_miss              = mask_incorrect & mask_prev_words
+            mask_false_alarm       = mask_incorrect & mask_prev_pseudowords
+            mask_correct_rejection = mask_correct & mask_prev_pseudowords
+
+            # value for each parameter
+            hit               = mask_hit.sum()
+            miss              = mask_miss.sum()
+            false_alarm       = mask_false_alarm.sum()
+            correct_rejection = mask_correct_rejection.sum()
+
+            # Adjusted hit and false alarm rates
+            hit_rate = (hit + 0.5) / (hit + miss + 1)
+            fa_rate  = (false_alarm + 0.5) / (false_alarm + correct_rejection + 1)
+
+            # Compute z-scores
+            z_hit   = norm.ppf(hit_rate)
+            z_fa    = norm.ppf(fa_rate)
+
+            # Compute SDT metrics
+            d_prime = z_hit - z_fa
+            c       = -0.5 * (z_hit + z_fa)
+            beta    = np.exp((z_fa**2 - z_hit**2) / 2)
+
+        else:
+            acc     = -1
+            d_prime = -1
+            c       = -1
+            beta    = -1
+
+        # === AUDIO: RT ===
         avg_rt = round(df_filtfilt.loc[df_filtfilt['correct'] == True, 'rt'].mean(), 2)
         
-        # store accuracy and RT in a list
+        # === AUDIO: Accuracy, RT, SDT ===
         acc_ls_audio.append(acc)
         RT_ls_audio.append(avg_rt)
-
+        dprime_ls_audio.append(d_prime)
+        c_ls_audio.append(c)
+        beta_ls_audio.append(beta)
 
     # === output as csv file ===
     df_acc = pd.DataFrame({
-        'file_name': f_name_ls_all,
-        'accuracy_all': acc_ls_all,
-        'RT_all': RT_ls_all,
+        'file_name':       f_name_ls_all,
+        'accuracy_all':    acc_ls_all,
+        'RT_all':          RT_ls_all,
+        'dprime_all':      dprime_ls_all,
+        'c_all':           c_ls_all,
+        'beta_all':        beta_ls_all,
         'accuracy_visual': acc_ls_visual,
-        'RT_visual': RT_ls_visual,
-        'accuracy_audio': acc_ls_audio,
-        'RT_audio': RT_ls_audio
+        'RT_visual':       RT_ls_visual,
+        'dprime_visual':   dprime_ls_visual,
+        'c_visual':        c_ls_visual,
+        'beta_visual':     beta_ls_visual,
+        'accuracy_audio':  acc_ls_audio,
+        'RT_audio':        RT_ls_audio,
+        'dprime_audio':    dprime_ls_audio,
+        'c_audio':         c_ls_audio,
+        'beta_audio':      beta_ls_audio
     })
 
     save_path = DERIV_DIR / f'sub-{subject}/behavior/accuracy_summary.csv'
