@@ -198,7 +198,7 @@ for subject in subjects_filtered:
 
 
         # === AUDIO: Accuracy ===
-        # Create a boolean mask for previous trial starting with 'images'
+        # Create a boolean mask for previous trial starting with 'audios'
         mask_prev_images = df_filtered['trial_type'].shift(1).str.startswith('audios')
 
         # Combine masks: only keep rows where both conditions are True
