@@ -16,7 +16,7 @@ from statsmodels.stats.multicomp import pairwise_tukeyhsd
 # ===  FIXED: Parameters ===
 ANALY_DIR    = Path('/ptmp/kazma/SLANG-CROSS-analysis')
 DERIV_DIR    = ANALY_DIR / 'derivatives'
-FIG_DIR      = ANALY_DIR / 'figures'
+FIG_DIR      = ANALY_DIR / 'figures/beheavior'
 OUT_DIR      = ANALY_DIR / 'outputs'
 
 # === Parameters ===

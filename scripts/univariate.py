@@ -19,6 +19,7 @@ from bids import BIDSLayout
 import nibabel as nib
 import re
 import os
+import glob
 import numpy as np
 
 
@@ -31,13 +32,12 @@ DERIV_DIR      = ANALY_DIR / 'derivatives'  # where to store outputs
 PYBIDS_DIR     = DERIV_DIR / 'pybids'
 
 # === Inpupt parameters: First-level GLM ===
-SPACE          = 'MNI152NLin2009cAsym' # T1w, fsnative, MNI152NLin2009cAsym
-SUBJECT        = '101'  # subject label
+SPACE          = 'MNIPediatricAsym_cohort-4_res-2' # T1w, fsnative, MNI152NLin2009cAsym, MNIPediatricAsym_cohort-4_res-2
 SESSION        = '01'
 TASK           = 'language'
 BLOCKWISE      = False
 TR             = 2.0
-SMOOTHING_FWHM = 5.0
+SMOOTHING_FWHM = 9.0 # 6, 9, 12
 HRF_MODEL      = 'spm'
 DRIFT_MODEL    = 'cosine'
 HIGH_PASS      = 0.01
@@ -55,7 +55,7 @@ CONTRASTS      = ['images_words - images_pseudo',
                   'images_pseudo',
                   'audios_pseudo',
                   '(images_words + audios_words) - (images_pseudo + audios_pseudo)']
-EXC_SUBJECTS   = ['108', '113', '116', '120', '122', '125', '126', '206', '220', '227', '405', '410', '421','424', '427', '430']
+EXC_SUBJECTS   = ['108', '111', '113', '116', '118', '120', '121', '122', '124', '125', '126', '128', '201', '205', '206', '208', '220', '225', '226', '227', '405', '406', '408', '409', '410', '421', '422', '424', '427', '430', '434']
 
 # %%
 # === import user-defined functions ====
@@ -202,43 +202,58 @@ def save_img(img, output_dir, task, space, desc, suffix,
 
     return file
 
+# Function to extract run number
+def get_run_number(path):
+    match = re.search(r"run-(\d+)", path.name)
+    return int(match.group(1)) if match else 0
 
 # %%
 ## === Prepare First-level GLM ===
-layout   = BIDSLayout(BIDS_DIR, derivatives=FMRIPRE_DIR, database_path=PYBIDS_DIR, validate=True, reset_database=True)
+layout   = BIDSLayout(BIDS_DIR, derivatives=FMRIPRE_DIR, database_path=PYBIDS_DIR, validate=False, reset_database=True)
 
 # Get all subject list
 subjects = layout.get_subjects()  # returns a list like ['01', '02', '03', ...]
-
 for subject in subjects:
     if subject in EXC_SUBJECTS:
         continue
     
     print(f"\nProcessing subject {subject}...\n")
 
+    # behavior file
+    beh_file     = Path(f"{DERIV_DIR}/sub-{subject}/behavior/accuracy_summary.csv")
+    beh_df       = pd.read_csv(beh_file)
+    remove_idx   = beh_df.index[beh_df['accuracy_all'].isin([0, -1])].tolist()
+
     # Event files
     events_files = layout.get(subject=subject, session=SESSION, task=TASK,
                                 suffix='events', extension='tsv')
-    # Mask files
-    mask_files   = layout.get(subject=subject, session=SESSION, task=TASK,
-                                space=SPACE, desc='brain', suffix='mask',
-                                extension='nii.gz')
+    events_files = [f for i, f in enumerate(events_files) if i not in remove_idx]
+    
+    # Mask files    
+    dir          = Path(f"{FMRIPRE_DIR}/sub-{subject}/ses-{SESSION}/func")
+    mask_files   = list(dir.rglob(f"*space-{SPACE}_desc-brain_mask.nii.gz"))
+    mask_files   = sorted(mask_files, key=get_run_number)
+    mask_files   = [f for i, f in enumerate(mask_files) if i not in remove_idx]
+    
+
     # Functional runs
-    func_files   = layout.get(subject=subject, session=SESSION, task=TASK,
-                                space=SPACE, desc='preproc', suffix='bold',
-                                extension='nii.gz')
+    func_files   = list(dir.rglob(f"*space-{SPACE}_desc-preproc_bold.nii.gz"))
+    func_files   = sorted(func_files, key=get_run_number)
+    func_files   = [f for i, f in enumerate(func_files) if i not in remove_idx]
 
     # confounds
     con_files    = layout.get(subject=subject, session=SESSION, task=TASK,
                                     desc='confounds', suffix='timeseries',
                                     extension='tsv')
+    con_files    = [f for i, f in enumerate(con_files) if i not in remove_idx]
 
     # Create output folder
-    out_dir = Path(f"{DERIV_DIR}/sub-{subject}/glm/{SPACE}")
+    folder_name = f"FWHM_{int(SMOOTHING_FWHM)}"
+    out_dir     = Path(f"{DERIV_DIR}/sub-{subject}/glm/{SPACE}/{folder_name}")
     os.makedirs(out_dir, exist_ok=True)
 
     # create a brain mask combined across runs
-    mask_imgs = [f.path for f in mask_files]
+    mask_imgs = [str(f) for f in mask_files]
     x = combine_save_mask_imgs(mask_imgs, out_dir, TASK, SPACE,
                             perc_threshold=0.5)
     masks_sum = load_img(str(x[1]))
@@ -255,7 +270,7 @@ for subject in subjects:
             print(f"\nProcessing run {n_run+1}/{len(func_files)}...\n")
 
             # functional file
-            func_img    = load_img(func_files[n_run].path)
+            func_img    = load_img(func_files[n_run])
 
             # frame time
             frame_times = make_frame_times(layout, func_img)
@@ -281,7 +296,7 @@ for subject in subjects:
             confounds = confounds[cols]
 
             # mask file
-            mask_img = load_img(mask_files[n_run].path)
+            mask_img = load_img(mask_files[n_run])
 
 
             # generate design matrix
