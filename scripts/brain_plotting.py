@@ -20,9 +20,9 @@ OUT_DIR      = ANALY_DIR / 'outputs'
 SUBJECT        = 'sub-101'
 MODEL          = 'glm'
 SPACE          = 'MNIPediatricAsym_cohort-4_res-2'
-CONTRASTS      = 'images_words+audios_words-images_pseudo+audios_pseudo'
+CONTRASTS      = 'images_words-images_pseudo'
 GRADE          = '4' # 1, 2, 4
-FWHM_SMOOTHING = 6.0 # 6.0, 9.0, 12.0
+FWHM_SMOOTHING = 9.0 # 6.0, 9.0, 12.0
 
 # List of the contrasts
 """             'images_words - images_pseudo' 
@@ -52,13 +52,13 @@ for cidx, tmap in enumerate(t_maps):
     plotting.plot_glass_brain(
         tmap,
         colorbar=True,
-        threshold=3,
+        threshold=2,
         title=subject_names[cidx],
         axes=axes[cidx],
         plot_abs=False,
         display_mode="z",
-        vmin=-10,
-        vmax=10,
+        vmin=-8,
+        vmax=8,
     )
 for ax in axes[len(t_maps):]:
     ax.axis('off')
@@ -66,7 +66,7 @@ for ax in axes[len(t_maps):]:
 fig.suptitle("Subject-level t-maps for contrast: Words > Pseudowords", fontsize=16, y=0.93)
 dir = f"{FIG_DIR}/{MODEL}"
 os.makedirs(dir, exist_ok=True)
-fig.savefig(f"{dir}/Grade_{GRADE}_t-maps_{CONTRASTS}.png", dpi=300, bbox_inches='tight')
+fig.savefig(f"{dir}/Grade_{GRADE}_t-maps_{CONTRASTS}_FWHM{int(FWHM_SMOOTHING)}.png", dpi=300, bbox_inches='tight')
 plt.show()
 
 """ nii_path = DERIV_DIR / SUBJECT / MODEL / SPACE / 'images_words-images_pseudo_beta.nii.gz'
