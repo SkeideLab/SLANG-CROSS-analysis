@@ -21,14 +21,14 @@ OUT_DIR      = ANALY_DIR / 'outputs'
 
 # === Parameters ===
 MODALITY     = 'all' # all, visual, audio
-TARGET       = 'dprime' # accuracy, RT, dprime, drift
+TARGET       = 'drift' # accuracy, RT, dprime, drift, start
 EXC_SUBJECTS = ['108', '111', '113', '116', '118', '120', '121', '122', '124', '125', '126', '128', '201', '205', '206', '208', '220', '225', '226', '227', '405', '406', '408', '409', '410', '421', '422', '424', '427', '430', '434']
 
 # make a figure directory
 FIG_DIR.mkdir(parents=True, exist_ok=True)
 
 # %% Load the Data
-if TARGET=='drift':
+if TARGET in ['drift', 'start']:
     # === DDM ===
     ddm_str         = f"ddm_{MODALITY}"
     path            = OUT_DIR / f"{ddm_str}.csv"
@@ -115,7 +115,7 @@ if TARGET in ['accuracy', 'RT', 'dprime']:
     tukey = pairwise_tukeyhsd(endog=mean[str], groups=mean['grade'], alpha=0.05)
     print(tukey)
 
-elif TARGET=='drift':
+elif TARGET in ['drift', 'start']:
     # ddm: drift
     groups = [df.loc[df['grade'] == g, TARGET] for g in df['grade'].unique()]
     f_stat, p_value = stats.f_oneway(*groups)
@@ -198,10 +198,10 @@ if TARGET in ['accuracy', 'RT', 'dprime']:
     elif TARGET=='dprime':
         plt.ylabel(f"{TARGET} (d')") 
     plt.grid(False)
-    plt.savefig(f"{FIG_DIR}/{str}_violin.png", dpi=300, bbox_inches='tight')
+    plt.savefig(f"{FIG_DIR}/{TARGET}_{MODALITY}_violin.png", dpi=300, bbox_inches='tight')
     plt.show()
 
-elif TARGET=='drift':
+elif TARGET in ['drift', 'start']:
     # === DDM: drift ===
     plt.figure(figsize=(8,6))
     sns.violinplot(
@@ -215,17 +215,21 @@ elif TARGET=='drift':
         legend=False,
         alpha=0.4
     )
-
-    plt.title(f"{TARGET} rate (v) distribution by grade")
-    plt.xlabel("grade")
-    plt.ylabel(f"{TARGET} rate (v)")
+    if  TARGET=='drift':
+        plt.title(f"{TARGET} rate (v) distribution by grade")
+        plt.ylabel(f"{TARGET} rate (v)")
+    elif TARGET=='start':
+        plt.title("Starting point bias (z) distribution by grade")
+        plt.ylabel("Starting point bias (z)")
+        plt.ylim(-1, 1)
     plt.grid(False)
-    plt.savefig(f"{FIG_DIR}/{TARGET}_violin.png", dpi=300, bbox_inches='tight')
+    plt.xlabel("grade")
+    plt.savefig(f"{FIG_DIR}/{TARGET}_{MODALITY}_violin.png", dpi=300, bbox_inches='tight')
     plt.show()
 
 else:
     raise ValueError(
         f"Unknown Target: {TARGET}\n"
         "Please choose one of the following\n"
-        "accuracy, RT, dprime, drift")
+        "accuracy, RT, dprime, drift, start")
 # %%
