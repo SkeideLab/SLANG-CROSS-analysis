@@ -55,14 +55,18 @@ for subject in subjects:
     t_maps.append(t_map)
 
 # %% On the T1w Template 
-nrows, ncols = 6, 4
+if GRADE == '4':
+    nrows, ncols = 6, 4
+elif GRADE in ['1', '2']:
+    nrows, ncols = 5, 4
+    
 fig, axes    = plt.subplots(nrows=nrows, ncols=ncols, figsize=(10, 16))
 axes         = axes.flatten()  # flatten grid for simple 1D indexing
 threshold    = 2
 
 plotting_config = {
     "display_mode": "z",
-    "cut_coords": [-14],
+    "cut_coords": [-10],
     "draw_cross": False,
     "vmax": 4,
     "vmin": -4,
