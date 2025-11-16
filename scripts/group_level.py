@@ -28,9 +28,9 @@ OUT_DIR      = ANALY_DIR / 'outputs'
 # === Parameters ===
 MODEL          = 'glm'
 SPACE          = 'MNIPediatricAsym_cohort-4_res-2'
-CONTRASTS      = 'audios_words-audios_pseudo'
-GRADE          = '1' # 1, 2, 4
-FWHM_SMOOTHING = 9.0 # 6.0, 9.0, 12.0
+CONTRASTS      = 'images_words+audios_words-images_pseudo+audios_pseudo'
+GRADE          = '4' # 1, 2, 4
+FWHM_SMOOTHING = 12.0 # 6.0, 9.0, 12.0
 P_CORRECTION   = 0.001
 EXC_SUBJECTS   = ['108', '111', '113', '116', '118', '120', '121', '122', '124', '125', '126', '128', '201', '205', '206', '208', '220', '225', '226', '227', '405', '406', '408', '409', '410', '421', '422', '423', '424', '427', '430', '434']
 # Retrieve the T1-weighted template for cohort 4 (7.5-13.5yrs) at 2mm resolution
@@ -99,7 +99,9 @@ else:
     contrast = CONTRASTS
 
 # Z-coordinates you want to visualize
-if 'images' in CONTRASTS:
+if 'images' in CONTRASTS and 'audios' in CONTRASTS:
+    z_coords = np.arange(0, 20, 2)
+elif 'images' in CONTRASTS:
     z_coords = np.arange(-15, -4, 1)  # from -15 to -5 inclusive
 elif 'audios' in CONTRASTS:
     z_coords = np.arange(-5, 10, 2) # from -5 to 5
