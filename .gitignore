@@ -3,3 +3,4 @@ derivatives/
 containers/
 logs/
 scripts/__pycache__/
+templates/

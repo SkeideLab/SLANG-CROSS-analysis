@@ -337,17 +337,19 @@ for subject in subjects:
 
         #
         # === subject level effect size ===
-        fixed_fx_contrast, fixed_fx_variance, fixed_fx_stat = compute_fixed_effects(
-            contrast_imgs, variance_imgs, mask=masks_sum)
+        fixed_fx_contrast, fixed_fx_variance, fixed_fx_stat, fixed_fx_z_score = compute_fixed_effects(
+            contrast_imgs, variance_imgs, mask=masks_sum, return_z_score=True)
 
         # save in the outdir
         contrast_no_space = contrast.replace(' ', '').replace('(', '').replace(')', '')
         output_beta       = Path(f"{out_dir}/{contrast_no_space}_beta.nii.gz")
         output_tstat      = Path(f"{out_dir}/{contrast_no_space}_tstat.nii.gz")
         output_var        = Path(f"{out_dir}/{contrast_no_space}_var.nii.gz")
+        output_zscore     = Path(f"{out_dir}/{contrast_no_space}_zscore.nii.gz")
 
         fixed_fx_contrast.to_filename(output_beta)
         fixed_fx_variance.to_filename(output_tstat)
         fixed_fx_stat.to_filename(output_var)
+        fixed_fx_z_score.to_filename(output_zscore)
 
 
