@@ -22,11 +22,12 @@ from scipy.stats import norm
 import templateflow.api as tflow
 from nilearn.glm import cluster_level_inference, threshold_stats_img
 from nilearn.mass_univariate import permuted_ols
-from nilearn.input_data import NiftiMasker
+from nilearn.maskers import NiftiMasker
 from nilearn.masking import compute_multi_epi_mask
 
 # %%
 # ===  FIXED: Parameters ===
+CONV_DIR     = Path('/ptmp/kazma/SLANG-CROSS-conversion')
 ANALY_DIR    = Path('/ptmp/kazma/SLANG-CROSS-analysis')
 DERIV_DIR    = ANALY_DIR / 'derivatives'
 FIG_DIR      = ANALY_DIR / 'figures'
@@ -36,8 +37,8 @@ OUT_DIR      = ANALY_DIR / 'outputs'
 MODEL          = 'glm'
 METHOD         = 'parametric' # 'parametric' 'non-parametric'
 SPACE          = 'MNIPediatricAsym_cohort-4_res-2'
-CONTRASTS      = 'images_pseudo'
-GRADE          = '1' # 1, 2, 4
+CONTRASTS      = 'images_words-images_pseudo'
+GRADE          = 'all' # 1, 2, 4 or all
 FWHM_SMOOTHING = 9.0 # 6.0, 9.0, 12.0
 CORRECTION     = 'fpr' # fdr, fpr 
 P_CORRECTION   = 0.001 # 0.001, 0.05
@@ -59,13 +60,17 @@ TEMPLATE       =  tflow.get(
                 'audios_pseudo'
                 'images_words+audios_words-images_pseudo+audios_pseudo' """
 
-# % =====================
+# %% =====================
 # list the beta nii.files
-subjects      = sorted(DERIV_DIR.glob(f"sub-{GRADE}*"))
+if GRADE == 'all':
+    subjects      = sorted(DERIV_DIR.glob(f"sub-*"))
+else:
+    subjects      = sorted(DERIV_DIR.glob(f"sub-{GRADE}*"))
 exclude       = [f"sub-{s}" for s in EXC_SUBJECTS]
 subjects      = [s for s in subjects if s.name not in exclude]
 subject_names = [p.name.replace('sub-', '') for p in subjects]
 
+# get the beta paths
 beta_lists = []
 for sub in subjects:
     path = sub / 'glm' / SPACE / f"FWHM_{int(FWHM_SMOOTHING)}" 
@@ -73,11 +78,35 @@ for sub in subjects:
     beta_lists.append(beta_path)
 beta_paths = [str(p) for p in beta_lists]
 
-# model design
-design_matrix = pd.DataFrame(
-    [1] * len(beta_paths),
-    columns=["intercept"],
-)
+# get the behavioral results
+acc_lists = []
+rt_lists  = []
+for sub in subjects:
+    path     = sub / 'behavior' / 'excluded' / 'accuracy_summary.csv'
+    df       = pd.read_csv(path)
+    acc_mean = float(round(df['accuracy_visual'].mean(), 1))
+    rt_mean  = float(round(df['RT_visual'].mean(), 1))
+    acc_lists.append(acc_mean)
+    rt_lists.append(rt_mean)
+
+# get the sex info
+sex_lists = []
+for sub in subjects:
+    path = 
+
+if GRADE=='all':
+    # model design
+    design_matrix = pd.DataFrame({
+        "intercept": [1] * len(beta_paths),
+        "accuracy": acc_lists,
+        "sex": sex_lists
+    })
+else:
+    # model design
+    design_matrix = pd.DataFrame(
+        [1] * len(beta_paths),
+        columns=["intercept"],
+    )
 
 # specify the model
 second_level_model = SecondLevelModel(
@@ -97,6 +126,7 @@ if METHOD == 'parametric':
         second_level_contrast="intercept",
         output_type="z_score",
     )
+
     # correction methods
     thresholded_map, threshold = threshold_stats_img(
     z_map,
