@@ -1,6 +1,7 @@
 # Ignore the containers directory
 derivatives/
-containers/
 logs/
 scripts/__pycache__/
 templates/
+containers/
+outputs/
