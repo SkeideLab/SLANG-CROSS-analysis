@@ -4,6 +4,13 @@ from nilearn.plotting import plot_stat_map
 from nilearn import plotting, image, datasets
 from pathlib import Path
 import templateflow.api as tflow
+import os
+
+# Limit threads to avoid OpenBLAS / kernel crashes
+os.environ["OPENBLAS_NUM_THREADS"] = "4"
+os.environ["OMP_NUM_THREADS"] = "4"
+os.environ["MKL_NUM_THREADS"] = "4"
+os.environ["ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS"] = "4"
 import ants
 import numpy as np
 import nibabel as nib
@@ -22,11 +29,11 @@ MODEL          = 'glm'
 METHOD         = 'parametric' # 'parametric' 'non-parametric'
 SPACE          = 'MNIPediatricAsym_cohort-4_res-2'
 CONTRASTS      = 'images_words-images_pseudo'
-GRADE          = '2' # 1, 2, 4 or all
+GRADE          = 'all' # 1, 2, 4 or all
 FWHM_SMOOTHING = 9.0 # 6.0, 9.0, 12.0
 CORRECTION     = 'fpr' # fdr, fpr 
 P_CORRECTION   = 0.001 # 0.001, 0.05
-CLUSTER_SIZE   = 50
+CLUSTER_SIZE   = 10
 EXC_SUBJECTS   = ['108', '111', '113', '116', '118', '120', '121', '122', '124', '125', '126', '128', '201', '205', '206', '208', '220', '225', '226', '227', '405', '406', '408', '409', '410', '421', '422', '423', '424', '427', '430', '434']
 # Retrieve the T1-weighted template for cohort 4 (7.5-13.5yrs) at 2mm resolution
 TEMPLATE       =  tflow.get(
@@ -56,7 +63,7 @@ MNI_2mm.to_filename(MNI_filepath)
 fixed = ants.image_read(str(MNI_filepath))
 
 # T1w pediatric space
-moving    = ants.image_read(str(TEMPLATE))
+moving = ants.image_read(str(TEMPLATE))
 
 # nonlinear registration
 reg = ants.registration(
@@ -65,13 +72,18 @@ reg = ants.registration(
     type_of_transform = "SyN"   # recommended
 )
 
-path      = OUT_DIR / MODEL / SPACE / CONTRASTS
-file_name = f"GRADE-{GRADE}_FWHM-{int(FWHM_SMOOTHING)}_p<{P_CORRECTION}_cls>{CLUSTER_SIZE}_z-map_acc.nii.gz"
+if MODEL=='glm':
+    path      = OUT_DIR / MODEL / SPACE / CONTRASTS
+    file_name = f"GRADE-{GRADE}_FWHM-{int(FWHM_SMOOTHING)}_p<{P_CORRECTION}_cls>{CLUSTER_SIZE}_z-map_1vs4.nii.gz"
+elif MODEL=='anova':
+    path      = OUT_DIR / MODEL / CONTRASTS
+    file_name = f"p<{P_CORRECTION}_cls>{CLUSTER_SIZE}_f-map.nii.gz"
+
 filepath  = path / file_name
 data_img  = nib.load(filepath)
 data      = data_img.get_fdata()
 # find the MNI coordinates of a cluster
-cluster_mask = data > 0
+cluster_mask = data != 0
 
 # Label connected clusters
 labeled_array, num_clusters = label(cluster_mask)
@@ -105,8 +117,21 @@ for i in range(1, num_clusters + 1):
 
     cluster_data = data * (labeled_array == i)
     
+
+    max_val = np.max(cluster_data)
+    min_val = np.min(cluster_data)
+    if max_val > 0:
     # Find the voxel of the maximum value in this cluster
-    voxel_index = np.unravel_index(np.argmax(cluster_data), cluster_data.shape)
+        voxel_index = np.unravel_index(
+            np.argmax(cluster_data), 
+            cluster_data.shape
+        )
+    elif min_val < 0:
+        # Find the voxel of the minimum value in this cluster
+        voxel_index = np.unravel_index(
+            np.argmin(cluster_data), 
+            cluster_data.shape
+        )
 
     # voxel index → pediatric wordl (mm)
     ped_affine = data_img.affine

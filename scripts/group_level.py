@@ -34,16 +34,19 @@ DERIV_DIR    = ANALY_DIR / 'derivatives'
 FIG_DIR      = ANALY_DIR / 'figures'
 OUT_DIR      = ANALY_DIR / 'outputs'
 DEMO_DIR     = ANALY_DIR / 'demographics'
+TEMP_DIR     = ANALY_DIR / 'templates'
+
 # === Parameters ===
 MODEL          = 'glm'
 METHOD         = 'parametric' # 'parametric' 'non-parametric'
 SPACE          = 'MNIPediatricAsym_cohort-4_res-2'
-CONTRASTS      = 'images_words-images_pseudo'
-GRADE          = 'all' # 1, 2, 4 or all
+CONTRASTS      = 'images_pseudo'
+MASK           = 'ventral' # none, ventral, fusiform, WVFA
+GRADE          = '1' # 1, 2, 4 or all
 FWHM_SMOOTHING = 9.0 # 6.0, 9.0, 12.0
-CORRECTION     = 'fpr' # fdr, fpr 
-P_CORRECTION   = 0.001 # 0.001, 0.05
-CLUSTER_SIZE   = 50
+CORRECTION     = 'fdr' # fdr, fpr, bonferoni 
+P_CORRECTION   = 0.05 # 0.001, 0.05
+CLUSTER_SIZE   = 10
 EXC_SUBJECTS   = ['108', '111', '113', '116', '118', '120', '121', '122', '124', '125', '126', '128', '201', '205', '206', '208', '220', '225', '226', '227', '405', '406', '408', '409', '410', '421', '422', '423', '424', '427', '430', '434']
 # Retrieve the T1-weighted template for cohort 4 (7.5-13.5yrs) at 2mm resolution
 TEMPLATE       =  tflow.get(
@@ -213,13 +216,35 @@ if METHOD == 'parametric':
 
 
     # one-sample test
+        
     z_map = second_level_model.compute_contrast(
         second_level_contrast="intercept",
         output_type="z_score",
     )
+
+    if MASK == 'ventral':
+        left_mask_fn  = TEMP_DIR / 'mask' / 'left_ventral_mask.nii.gz'
+        right_mask_fn = TEMP_DIR / 'mask' / 'right_ventral_mask.nii.gz'
+        left_mask_img = nib.load(left_mask_fn)
+        right_mask_img = nib.load(right_mask_fn)
+        # Combine masks (union)
+        ventral_mask_data = (
+                (left_mask_img.get_fdata() == 1) |
+                (right_mask_img.get_fdata() == 1)
+            ).astype(np.uint8)
+        ventral_mask_img = nib.Nifti1Image(
+                ventral_mask_data,
+                left_mask_img.affine
+            )
+        z_map = image.math_img(
+                "stat * mask",
+                stat=z_map,
+                mask=ventral_mask_img
+            )
+        
     thresholded_map, threshold = threshold_stats_img(
         z_map,
-        two_sided=False,
+        two_sided=True,
         alpha=P_CORRECTION,
         cluster_threshold=CLUSTER_SIZE,
         height_control=CORRECTION,
@@ -232,7 +257,7 @@ if METHOD == 'parametric':
     )
     thresholded_map_acc, threshold_acc = threshold_stats_img(
         z_map_acc,
-        two_sided=False,
+        two_sided=True,
         alpha=P_CORRECTION,
         cluster_threshold=CLUSTER_SIZE,
         height_control=CORRECTION,
@@ -397,11 +422,11 @@ if METHOD == 'parametric':
         "draw_cross": False,
         "vmax": 5,
         "vmin": 0,
-        "cmap": "cold_hot",
+        "cmap": "hot",
     }
 
     # plot the uncorrrected p-value figure 
-    display_unc = plotting.plot_stat_map(
+    """     display_unc = plotting.plot_stat_map(
         z_map,
         title=f"Grade-{GRADE} {contrast} (unc p<{P_CORRECTION})",
         bg_img=TEMPLATE,
@@ -409,8 +434,12 @@ if METHOD == 'parametric':
         **plotting_config,
     )
     display_unc.savefig(f"{dir}/Grade_{GRADE}_z-maps_{CONTRASTS}_FWHM{int(FWHM_SMOOTHING)}_p-val<{P_CORRECTION}.png", dpi=300)
-
-    # plot the p-value with cluster size figure 
+    """
+    # plot the p-value with cluster size figure
+    thresholded_map = image.math_img(
+        "img * (img > 0)",
+        img=thresholded_map
+    ) 
     display_FPR = plotting.plot_stat_map(
         thresholded_map,
         title=f"Grade-{GRADE} {contrast} (cluster-thr > {CLUSTER_SIZE}, p < {P_CORRECTION})",
@@ -425,7 +454,62 @@ if METHOD == 'parametric':
         colors='black',             # color of the outline
         linewidths=1
     )
-    display_FPR.savefig(f"{dir}/Grade_{GRADE}_{CONTRASTS}_FWHM{int(FWHM_SMOOTHING)}_cluster-thr<{CLUSTER_SIZE}_p-val<{P_CORRECTION}_{CORRECTION}.png", dpi=300)
+    display_FPR.savefig(f"{dir}/Grade_{GRADE}_{CONTRASTS}_FWHM{int(FWHM_SMOOTHING)}_cluster-thr<{CLUSTER_SIZE}_p-val<{P_CORRECTION}_{CORRECTION}_{MASK}.png", dpi=300)
+    
+
+    if GRADE == 'all':
+        # plot the p-value with cluster size figure 
+        display_1vs2 = plotting.plot_stat_map(
+            thresholded_map_1vs2,
+            title=f"Grade-1 vs. 2 {contrast} (cluster-thr > {CLUSTER_SIZE}, p < {P_CORRECTION})",
+            bg_img=TEMPLATE,
+            threshold=threshold_1vs2,
+            **plotting_config,
+        )
+        # Add contours for the clusters
+        display_1vs2.add_contours(
+            thresholded_map_1vs2, 
+            levels=[threshold_1vs2],       # level(s) to contour
+            colors='black',             # color of the outline
+            linewidths=1
+        )
+        display_1vs2.savefig(f"{dir}/Grade_1vs2_{CONTRASTS}_FWHM{int(FWHM_SMOOTHING)}_cluster-thr<{CLUSTER_SIZE}_p-val<{P_CORRECTION}_{CORRECTION}.png", dpi=300)
+
+        # plot the p-value with cluster size figure 
+        display_1vs4 = plotting.plot_stat_map(
+            thresholded_map_1vs4,
+            title=f"Grade-1 vs. 4 {contrast} (cluster-thr > {CLUSTER_SIZE}, p < {P_CORRECTION})",
+            bg_img=TEMPLATE,
+            threshold=threshold_1vs4,
+            **plotting_config,
+        )
+        # Add contours for the clusters
+        display_1vs4.add_contours(
+            thresholded_map_1vs4, 
+            levels=[threshold_1vs4],    # level(s) to contour
+            colors='black',             # color of the outline
+            linewidths=1
+        )
+        display_1vs4.savefig(f"{dir}/Grade_1vs4_{CONTRASTS}_FWHM{int(FWHM_SMOOTHING)}_cluster-thr<{CLUSTER_SIZE}_p-val<{P_CORRECTION}_{CORRECTION}.png", dpi=300)
+
+        # plot the p-value with cluster size figure 
+        display_2vs4 = plotting.plot_stat_map(
+            thresholded_map_2vs4,
+            title=f"Grade-2 vs. 4 {contrast} (cluster-thr > {CLUSTER_SIZE}, p < {P_CORRECTION})",
+            bg_img=TEMPLATE,
+            threshold=threshold_2vs4,
+            **plotting_config,
+        )
+        # Add contours for the clusters
+        display_2vs4.add_contours(
+            thresholded_map_2vs4, 
+            levels=[threshold_2vs4],       # level(s) to contour
+            colors='black',             # color of the outline
+            linewidths=1
+        )
+        display_2vs4.savefig(f"{dir}/Grade_2vs4_{CONTRASTS}_FWHM{int(FWHM_SMOOTHING)}_cluster-thr<{CLUSTER_SIZE}_p-val<{P_CORRECTION}_{CORRECTION}.png", dpi=300)
+
+
 
 
 elif METHOD == 'non-parametric':

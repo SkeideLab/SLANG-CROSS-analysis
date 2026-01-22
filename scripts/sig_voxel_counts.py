@@ -38,7 +38,7 @@ P_CORRECTION   = 0.001 # 0.001, 0.05
 CLUSTER_SIZE   = 10
 RADIUS         = 12
 MNI_PEAK       = [55.5, -40.5, -14.5]
-MASK_TYPE      = 'ventral' # ventral, VWFA, fusiform
+MASK_TYPE      = 'VWFA' # ventral, VWFA, fusiform
 EXC_SUBJECTS   = ['108', '111', '113', '116', '118', '120', '121', '122', '124', '125', '126', '128', '201', '205', '206', '208', '220', '225', '226', '227', '405', '406', '408', '409', '410', '421', '422', '423', '424', '427', '430', '434']
 # List of the contrasts
 """             'images_words-images_pseudo' 
@@ -123,14 +123,25 @@ if MASK_TYPE == 'VWFA':
     right_mask_img  = nib.Nifti1Image(right_mask_data.astype(np.uint8), affine)
 
     # remove voxels outside of GM
-    left_mask  = (left_mask_data == 1) & (GM_data >= 0.8)
+    left_mask  = (left_mask_data == 1) & (GM_data > 0.5)
     left_mask  = left_mask.astype(np.uint8)
-    right_mask = (right_mask_data == 1) & (GM_data >= 0.8)
+    right_mask = (right_mask_data == 1) & (GM_data > 0.5)
     right_mask = right_mask.astype(np.uint8)
 
-    # Save the masks
+    # create NifTi images
     left_mask_img  = nib.Nifti1Image(left_mask, affine)
     right_mask_img = nib.Nifti1Image(right_mask, affine)
+
+    # specify the path to save
+    # define mask directory
+    mask_dir = TMPL_DIR / 'mask'
+    mask_dir.mkdir(parents=True, exist_ok=True) 
+    left_VWFA_filename = mask_dir / 'left_VWFA_mask.nii.gz'
+    right_VWFA_filename = mask_dir /'right_VWFA_mask.nii.gz'
+
+    # save masks
+    nib.save(left_mask_img, left_VWFA_filename)
+    nib.save(right_mask_img, right_VWFA_filename)
 
 elif MASK_TYPE == 'fusiform':
 
@@ -193,6 +204,16 @@ elif MASK_TYPE == 'fusiform':
     right_mask = right_mask_img.get_fdata().astype(np.uint8)
 
 
+    # specify the path to save
+    # define mask directory
+    mask_dir = TMPL_DIR / 'mask'
+    mask_dir.mkdir(parents=True, exist_ok=True) 
+    left_fusiform_filename = mask_dir / 'left_fusiform_mask.nii.gz'
+    right_fusiform_filename = mask_dir /'right_fusiform_mask.nii.gz'
+
+    # save masks
+    nib.save(left_mask_img, left_fusiform_filename)
+    nib.save(right_mask_img, right_fusiform_filename)
 
 elif MASK_TYPE == 'ventral':
     # Define your MNI coordinate for left hemisphere
@@ -226,14 +247,25 @@ elif MASK_TYPE == 'ventral':
     right_mask_img  = nib.Nifti1Image(right_mask_data.astype(np.uint8), affine)
 
     # remove voxels outside of GM
-    left_mask  = (left_mask_data == 1) & (GM_data >= 0.8) & (~cer_data)
+    left_mask  = (left_mask_data == 1) & (GM_data > 0.5) & (~cer_data)
     left_mask  = left_mask.astype(np.uint8)
-    right_mask = (right_mask_data == 1) & (GM_data >= 0.8) & (~cer_data)
+    right_mask = (right_mask_data == 1) & (GM_data > 0.5) & (~cer_data)
     right_mask = right_mask.astype(np.uint8)
 
     # Save the masks
     left_mask_img  = nib.Nifti1Image(left_mask, affine)
     right_mask_img = nib.Nifti1Image(right_mask, affine)
+
+    # specify the path to save
+    # define mask directory
+    mask_dir = TMPL_DIR / 'mask'
+    mask_dir.mkdir(parents=True, exist_ok=True) 
+    left_ventral_filename = mask_dir / 'left_ventral_mask.nii.gz'
+    right_ventral_filename = mask_dir /'right_ventral_mask.nii.gz'
+
+    # save masks
+    nib.save(left_mask_img, left_ventral_filename)
+    nib.save(right_mask_img, right_ventral_filename)
 
 # count the total volume
 voxel_sizes      = GM_img.header.get_zooms()  # should be (2.0, 2.0, 2.0)
@@ -351,7 +383,7 @@ for GRADE in GRADES:
             alpha=P_CORRECTION,
             height_control=CORRECTION,
             cluster_threshold=CLUSTER_SIZE,
-            two_sided=False,  # using a one-sided test
+            two_sided=False,  # using two-sided test
         )
         z_thr_data = z_map_thr.get_fdata()
 
@@ -401,7 +433,7 @@ df_peak = df[["grade", "subject", "peak_b"]]
 means = df_peak.groupby(["grade"])["peak_b"].mean()
 ses = df_peak.groupby(["grade"])["peak_b"].sem()
 print("=========================================")
-print(f"\nDependent variable: beta-value in the peak MNI cooedinates\n")
+print(f"\nDependent variable: beta-value in the peak MNI coordinates\n")
 print("mean")
 print(means)
 print("\nstandard error of the mean")
@@ -603,7 +635,17 @@ for dependent in dependents:
     print("=========================================") 
 
 
-    ### ======= Non-Parametric test ======= 
+    ### ======= Non-Parametric test =======
+    # Kruskal-Wallis within each hemisphere (one-way ANOVA)
+    kw_results = []
+    for hemi in df_long['hemisphere'].unique():
+        df_h = df_long[df_long['hemisphere'] == hemi]
+        kw = pg.kruskal(data=df_h, dv=dependent, between='grade')
+        kw['hemisphere'] = hemi
+        kw_results.append(kw)
+
+    kw_results = pd.concat(kw_results, ignore_index=True) 
+
     # Mann-Whitney U test
     results = []
     for hemi in df_long['hemisphere'].unique():
@@ -613,7 +655,7 @@ for dependent in dependents:
             dv=dependent,
             between='grade',
             parametric=False,     # <-- rank-based
-            padjust='fdr_bh'
+            padjust='fdr_bh' # Benjamini-Hochberg discovery rate correction within a hemisphere
         )
         res['hemisphere'] = hemi
         results.append(res)
@@ -621,6 +663,9 @@ for dependent in dependents:
     pw_rank_grade = pd.concat(results, ignore_index=True)
     print("=========================================")  
     print("\nNon-Parametric\n")
+    print("=========================================") 
+    print("\nKruskal-Wallis (within each hemisphere):\n")
+    print(kw_results)
     print("=========================================") 
     print("\nMann-Whitney Pairwise grade comparisons (within each hemisphere):\n")
     print(pw_rank_grade)
