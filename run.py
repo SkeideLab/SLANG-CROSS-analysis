@@ -13,6 +13,7 @@ with open(analy_dir / 'run_params.json', 'r') as fp:
 bids_dir       = Path(run_params['bids_dir'])
 conda_env      = run_params['conda_env']
 conda_env_name = run_params['conda_env_name']
+
 # %%
 script = script_dir / 'univariate.sh'
 args = [script, bids_dir, analy_dir, conda_env, conda_env_name]

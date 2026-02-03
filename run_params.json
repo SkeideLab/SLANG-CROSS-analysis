@@ -1,5 +1,6 @@
 {
-    "bids_dir": "/ptmp/kazma/SLANG-CROSS-conversion",
+    "bids_dir": "/work_beegfs/suknp132/SLANG-CROSS-conversion",
     "conda_env": "/viper/ptmp/kazma/miniforge3/etc/profile.d/conda.sh",
-    "conda_env_name": "nilearn_glm"
+    "conda_env_name": "nilearn_glm",
+    "analy_dir": "/work_beegfs/suknp132/SLANG-CROSS-analysis"
 }

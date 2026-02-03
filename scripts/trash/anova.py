@@ -17,7 +17,7 @@ from nilearn import image
 from nilearn.glm import cluster_level_inference, threshold_stats_img
 # %%
 # ===  FIXED: Parameters ===
-ANALY_DIR    = Path('/ptmp/kazma/SLANG-CROSS-analysis')
+ANALY_DIR    = Path('/work_beegfs/suknp132/SLANG-CROSS-analysis')
 DERIV_DIR    = ANALY_DIR / 'derivatives'
 FIG_DIR      = ANALY_DIR / 'figures'
 OUT_DIR      = ANALY_DIR / 'outputs'

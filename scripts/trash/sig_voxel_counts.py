@@ -16,11 +16,12 @@ from nilearn.maskers import NiftiSpheresMasker
 from matplotlib import colors
 from nilearn.glm import threshold_stats_img
 from nilearn.plotting import plot_roi, show
+import ants
 
 
 # %%
 # ===  FIXED: Parameters ===
-ANALY_DIR    = Path('/ptmp/kazma/SLANG-CROSS-analysis')
+ANALY_DIR    = Path('/work_beegfs/suknp132/SLANG-CROSS-analysis')
 DERIV_DIR    = ANALY_DIR / 'derivatives'
 FIG_DIR      = ANALY_DIR / 'figures'
 OUT_DIR      = ANALY_DIR / 'outputs'
@@ -30,15 +31,15 @@ TMPL_DIR     = ANALY_DIR / 'templates'
 MODEL          = 'glm'
 METHOD         = 'parametric' # 'parametric' 'non-parametric'
 SPACE          = 'MNIPediatricAsym_cohort-4_res-2'
-CONTRASTS      = 'images_words'
+CONTRASTS      = 'images_pseudo'
 GRADES         = ['1', '2', '4'] # 1, 2, 4
 FWHM_SMOOTHING = 9.0 # 6.0, 9.0, 12.0
-CORRECTION     = 'fpr' # fdr, fpr, rft
-P_CORRECTION   = 0.001 # 0.001, 0.05
-CLUSTER_SIZE   = 10
-RADIUS         = 12
+CORRECTION     = 'fdr' # fdr, fpr, rft
+P_CORRECTION   = 0.05 # 0.001, 0.05
+CLUSTER_SIZE   = 100
+RADIUS         = 6
 MNI_PEAK       = [55.5, -40.5, -14.5]
-MASK_TYPE      = 'VWFA' # ventral, VWFA, fusiform
+MASK_TYPE      = 'ventral' # ventral, VWFA, fusiform
 EXC_SUBJECTS   = ['108', '111', '113', '116', '118', '120', '121', '122', '124', '125', '126', '128', '201', '205', '206', '208', '220', '225', '226', '227', '405', '406', '408', '409', '410', '421', '422', '423', '424', '427', '430', '434']
 # List of the contrasts
 """             'images_words-images_pseudo' 
@@ -59,7 +60,7 @@ TEMPLATE =  tflow.get(
     suffix="T1w"      # T1-weighted image
 )
 
-# === Brain Mask ===
+# === Brain GM probablity Mask ===
 PROGS = tflow.get(
     "MNIPediatricAsym",
     cohort="4",       # cohort 4 = age 7.5-13.5
@@ -71,7 +72,7 @@ GM_mask = PROGS[1]
 GM_img  = nib.load(GM_mask)
 GM_data = GM_img.get_fdata()
 
-# Cerebellum mask
+# === Cerebellum mask converted to pediatric ===
 cer_path = TMPL_DIR / 'cerebellar_atlases-master' / 'tpl-MNI152NLin2009cSymC' / 'tpl-MNI152NLin2009cSymC_desc-cereb_mask.nii'
 cer_mask = nib.load(cer_path)
 # resample cerebellum mask to TEMPLATE space
@@ -84,7 +85,18 @@ cer_resampled = resample_to_img(
 )
 cer_data = cer_resampled.get_fdata().astype(bool)
 
-
+# === VWFA mask converted to pediatric ===
+VWFA_path = TMPL_DIR / 'mask' / 'left_VWFA_adult_MNI.nii.gz'
+VWFA_mask = nib.load(VWFA_path)
+# resample VWFA  mask to TEMPLATE space
+VWFA_resampled = resample_to_img(
+    source_img=VWFA_mask,
+    target_img=TEMPLATE,
+    interpolation='nearest',
+    copy_header=True,
+    force_resample=True
+)
+VWFA_data = VWFA_resampled.get_fdata().astype(bool)
 
 # === Ventral Mask ===
 # Load the reference image
@@ -98,24 +110,49 @@ shape = ref_data.shape
 # Create an empty mask
 mask = np.zeros(shape, dtype=np.uint8)
 
+# === Nonlinear transformation data ===
+MNI_path     = ANALY_DIR / 'templates' / 'adult_MNI_2mm'
+MNI_filepath = MNI_path / 'MNI152_2mm.nii.gz'
+MNI_img = nib.load(MNI_filepath)
+MNI_affine  = MNI_img.affine
+MNI_shape   = MNI_img.shape
+moving = ants.image_read(str(MNI_filepath)) # from adult MNI → 
+fixed = ants.image_read(str(TEMPLATE)) # to Pediatric
+
+
+# nonlinear registration
+reg = ants.registration(
+    fixed  = fixed,
+    moving = moving,
+    type_of_transform = "SyN"   # recommended
+)
+
 if MASK_TYPE == 'VWFA':
 
     # VWFA MNI coordinate
-    center = [-45, -57, -12]
+    center = np.array([-45, -57, -12])
     radius = RADIUS  # mm
 
-    ijk = np.indices(shape).reshape(3, -1)
+    ijk = np.indices(MNI_shape).reshape(3, -1)
     ijk_h = np.vstack([ijk, np.ones((1, ijk.shape[1]))])
-    xyz = (affine @ ijk_h)[:3, :].T
+    xyz = (MNI_affine @ ijk_h)[:3, :].T
 
-    center = np.asarray(center).reshape(1, 3)
+    # center = np.asarray(center).reshape(1, 3)
     dist = np.linalg.norm(xyz - center, axis=1)
-
-    mask = (dist <= radius).astype(np.uint8).reshape(shape)
+    mask = (dist <= radius).astype(np.uint8).reshape(MNI_shape)
 
     # Save the mask
-    left_mask_img = nib.Nifti1Image(mask, affine)
+    left_mask_img_MNI = nib.Nifti1Image(mask, MNI_affine)
 
+    # apply transform (adult MNI → pediatric)
+    left_mask_img = ants.apply_transforms(
+        fixed = fixed,                     # pediatric template
+        moving = left_mask_img_MNI,            # adult left VWFA mask
+        transformlist = reg['fwdtransforms'], # adult → pediatric
+        interpolator = 'nearestNeighbor'
+    )
+    left_mask_img_path = TEMPLATE / 'mask' / 'VWFA_pediatric_mask_raw.nii.gz'
+    nib.save(left_mask_img, left_mask_img_path)
 
     # create right hemisphere mask
     left_mask_data  = left_mask_img.get_fdata()
@@ -301,6 +338,12 @@ x_coord = -45  # One sagittal slice (middle of your range)
 green_cmap = colors.ListedColormap(['springgreen'])
 blue_cmap = colors.ListedColormap(['dodgerblue'])
 
+# load mask
+left_mask_path = TMPL_DIR / 'mask' / 'left_VWFA_pediatric_mask.nii.gz'
+right_mask_path = TMPL_DIR / 'mask' / 'right_VWFA_pediatric_mask.nii.gz'
+left_mask_img = nib.load(left_mask_path)
+right_mask_img = nib.load(right_mask_path)
+
 # configure the figure
 plotting_config = {
     "display_mode": "ortho",
@@ -310,15 +353,17 @@ plotting_config = {
     "bg_img": TEMPLATE,
 }
 
-# plot the uncorrrected p-value figure 
+# plot the mask (left) figure 
 display = plotting.plot_roi(
-    right_mask_img,
+    VWFA_resampled,
     # title="Ventral Mask",
+    colorbar=False,
     **plotting_config,
 )
 # Second mask (right) added to the same figure
 display.add_overlay(
-    left_mask_img,
+    right_mask_img,
+    colorbar=False,
     cmap=blue_cmap,
 )
 plotting.show()
@@ -329,6 +374,25 @@ print(f"\nSuccessful: Figure of the {MASK_TYPE} mask is saved ")
 # %%
 # === Compute total volume (mm3) ===
 results = []
+
+# load masks
+if MASK_TYPE == 'ventral':
+    left_mask_path = TMPL_DIR / 'mask' / 'left_ventral_pediatric_mask.nii.gz'
+    right_mask_path = TMPL_DIR / 'mask' / 'right_ventral_pediatric_mask.nii.gz'
+elif MASK_TYPE == 'VWFA':
+    left_mask_path = TMPL_DIR / 'mask' / 'left_VWFA_pediatric_mask.nii.gz'
+    right_mask_path = TMPL_DIR / 'mask' / 'right_VWFA_pediatric_mask.nii.gz'
+left_mask_img = nib.load(left_mask_path)
+right_mask_img = nib.load(right_mask_path)
+left_mask = left_mask_img.get_fdata().astype(np.uint8)
+right_mask = right_mask_img.get_fdata().astype(np.uint8)
+
+# Get the voxels info
+voxel_sizes      = left_mask_img.header.get_zooms()  # should be (2.0, 2.0, 2.0)
+voxel_volume     = voxel_sizes[0] * voxel_sizes[1] * voxel_sizes[2]
+left_volume_mm3  = voxel_volume * np.sum(left_mask)
+right_volume_mm3 = voxel_volume * np.sum(right_mask)
+
 
 for GRADE in GRADES:
 
@@ -368,8 +432,6 @@ for GRADE in GRADES:
         else:
             b_value = np.nan
             print(f"Warning: voxel out of bounds for subject {sub}")
-
-        print("beta =", b_value)
 
         # average beta-values within the mask
         b_left = b_data[left_mask.astype(bool)]
@@ -425,6 +487,8 @@ df = pd.DataFrame(results)
 
 # %%
 # ======== STATISTICS ========
+# directory
+dir = f"{FIG_DIR}/{MODEL}"
 
 # ======== ANOVA one-way =========
 # ======== Peak coordinates =========

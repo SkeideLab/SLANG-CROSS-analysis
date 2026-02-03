@@ -26,10 +26,11 @@ from nilearn.glm import cluster_level_inference, threshold_stats_img
 from nilearn.mass_univariate import permuted_ols
 from nilearn.maskers import NiftiMasker
 from nilearn.masking import compute_multi_epi_mask
+from matplotlib import colors
 
 # %%
 # ===  FIXED: Parameters ===
-ANALY_DIR    = Path('/ptmp/kazma/SLANG-CROSS-analysis')
+ANALY_DIR    = Path('/work_beegfs/suknp132/SLANG-CROSS-analysis')
 DERIV_DIR    = ANALY_DIR / 'derivatives'
 FIG_DIR      = ANALY_DIR / 'figures'
 OUT_DIR      = ANALY_DIR / 'outputs'
@@ -38,15 +39,14 @@ TEMP_DIR     = ANALY_DIR / 'templates'
 
 # === Parameters ===
 MODEL          = 'glm'
-METHOD         = 'parametric' # 'parametric' 'non-parametric'
 SPACE          = 'MNIPediatricAsym_cohort-4_res-2'
 CONTRASTS      = 'images_pseudo'
 MASK           = 'ventral' # none, ventral, fusiform, WVFA
-GRADE          = '1' # 1, 2, 4 or all
+GRADE          = '2' # 1, 2, 4 or all
 FWHM_SMOOTHING = 9.0 # 6.0, 9.0, 12.0
 CORRECTION     = 'fdr' # fdr, fpr, bonferoni 
 P_CORRECTION   = 0.05 # 0.001, 0.05
-CLUSTER_SIZE   = 10
+CLUSTER_SIZE   = 100
 EXC_SUBJECTS   = ['108', '111', '113', '116', '118', '120', '121', '122', '124', '125', '126', '128', '201', '205', '206', '208', '220', '225', '226', '227', '405', '406', '408', '409', '410', '421', '422', '423', '424', '427', '430', '434']
 # Retrieve the T1-weighted template for cohort 4 (7.5-13.5yrs) at 2mm resolution
 TEMPLATE       =  tflow.get(
@@ -121,6 +121,7 @@ design_matrix_acc = pd.DataFrame({
     "age": age_lists
 })
 
+
 if GRADE == 'all':
     n1 = sum(s.startswith("1") for s in subject_names)
     n2 = sum(s.startswith("2") for s in subject_names)
@@ -187,76 +188,135 @@ if GRADE == 'all':
 
 # % =====================
 # Parametric: One-sample t-test
-if METHOD == 'parametric':
-    second_level_model = second_level_model.fit(
+second_level_model = second_level_model.fit(
+    beta_paths,
+    design_matrix=design_matrix,
+)
+second_level_model_acc = second_level_model_acc.fit(
+    beta_paths,
+    design_matrix=design_matrix_acc,
+)
+if GRADE == 'all':
+    second_level_model_twosample = second_level_model_twosample.fit(
         beta_paths,
-        design_matrix=design_matrix,
+        design_matrix=design_matrix_twosample,
     )
-    second_level_model_acc = second_level_model_acc.fit(
-        beta_paths,
-        design_matrix=design_matrix_acc,
+    second_level_model_1vs2 = second_level_model_1vs2.fit(
+        beta_path_1vs2,
+        design_matrix=design_matrix_1vs2,
     )
-    if GRADE == 'all':
-        second_level_model_twosample = second_level_model_twosample.fit(
-            beta_paths,
-            design_matrix=design_matrix_twosample,
-        )
-        second_level_model_1vs2 = second_level_model_1vs2.fit(
-            beta_path_1vs2,
-            design_matrix=design_matrix_1vs2,
-        )
-        second_level_model_1vs4 = second_level_model_1vs4.fit(
-            beta_path_1vs4,
-            design_matrix=design_matrix_1vs4,
-        )
-        second_level_model_2vs4 = second_level_model_2vs4.fit(
-            beta_path_2vs4,
-            design_matrix=design_matrix_2vs4,
-        )
+    second_level_model_1vs4 = second_level_model_1vs4.fit(
+        beta_path_1vs4,
+        design_matrix=design_matrix_1vs4,
+    )
+    second_level_model_2vs4 = second_level_model_2vs4.fit(
+        beta_path_2vs4,
+        design_matrix=design_matrix_2vs4,
+    )
 
 
-    # one-sample test
-        
-    z_map = second_level_model.compute_contrast(
-        second_level_contrast="intercept",
+# one-sample test
+   
+z_map = second_level_model.compute_contrast(
+    second_level_contrast="intercept",
+    output_type="z_score",
+)
+# brain-behavior correlation
+z_map_acc = second_level_model_acc.compute_contrast(
+    second_level_contrast="accuracy",
+    output_type="z_score",
+)
+
+if MASK == 'ventral':
+    left_mask_fn  = TEMP_DIR / 'mask' / 'left_ventral_pediatric_MNI.nii.gz'
+    right_mask_fn = TEMP_DIR / 'mask' / 'right_ventral_pediatric_MNI.nii.gz'
+    left_mask_img = nib.load(left_mask_fn)
+    right_mask_img = nib.load(right_mask_fn)
+    # Combine masks (union)
+    ventral_mask_data = (
+            (left_mask_img.get_fdata() == 1) |
+            (right_mask_img.get_fdata() == 1)
+        ).astype(np.uint8)
+    ventral_mask_img = nib.Nifti1Image(
+            ventral_mask_data,
+            left_mask_img.affine
+        )
+    z_map = image.math_img(
+            "stat * mask",
+            stat=z_map,
+            mask=ventral_mask_img
+        )
+    z_map_acc = image.math_img(
+            "stat * mask",
+            stat=z_map_acc,
+            mask=ventral_mask_img
+        )
+    
+thresholded_map, threshold = threshold_stats_img(
+    z_map,
+    two_sided=True,
+    alpha=P_CORRECTION,
+    cluster_threshold=CLUSTER_SIZE,
+    height_control=CORRECTION,
+)
+
+thresholded_map_acc, threshold_acc = threshold_stats_img(
+    z_map_acc,
+    two_sided=True,
+    alpha=P_CORRECTION,
+    # cluster_threshold=CLUSTER_SIZE,
+    cluster_threshold=0,
+    height_control=CORRECTION,
+)
+
+
+if GRADE == 'all':
+    # pairwise two-sample ttest (two sided)
+    z_map_1vs2 = second_level_model_1vs2.compute_contrast(
+        second_level_contrast="group",
         output_type="z_score",
     )
-
-    if MASK == 'ventral':
-        left_mask_fn  = TEMP_DIR / 'mask' / 'left_ventral_mask.nii.gz'
-        right_mask_fn = TEMP_DIR / 'mask' / 'right_ventral_mask.nii.gz'
-        left_mask_img = nib.load(left_mask_fn)
-        right_mask_img = nib.load(right_mask_fn)
-        # Combine masks (union)
-        ventral_mask_data = (
-                (left_mask_img.get_fdata() == 1) |
-                (right_mask_img.get_fdata() == 1)
-            ).astype(np.uint8)
-        ventral_mask_img = nib.Nifti1Image(
-                ventral_mask_data,
-                left_mask_img.affine
-            )
-        z_map = image.math_img(
-                "stat * mask",
-                stat=z_map,
-                mask=ventral_mask_img
-            )
-        
-    thresholded_map, threshold = threshold_stats_img(
-        z_map,
+    thresholded_map_1vs2, threshold_1vs2 = threshold_stats_img(
+        z_map_1vs2,
         two_sided=True,
         alpha=P_CORRECTION,
         cluster_threshold=CLUSTER_SIZE,
         height_control=CORRECTION,
     )
 
-    # brain-behavior correlation
-    z_map_acc = second_level_model_acc.compute_contrast(
-        second_level_contrast="accuracy",
+    # pairwise two-sample ttest (two sided)
+    z_map_1vs4 = second_level_model_1vs4.compute_contrast(
+        second_level_contrast="group",
         output_type="z_score",
     )
-    thresholded_map_acc, threshold_acc = threshold_stats_img(
-        z_map_acc,
+    thresholded_map_1vs4, threshold_1vs4 = threshold_stats_img(
+        z_map_1vs4,
+        two_sided=True,
+        alpha=P_CORRECTION,
+        cluster_threshold=CLUSTER_SIZE,
+        height_control=CORRECTION,
+    )
+
+    # pairwise two-sample ttest (two sided)
+    z_map_2vs4 = second_level_model_2vs4.compute_contrast(
+        second_level_contrast="group",
+        output_type="z_score",
+    )
+    thresholded_map_2vs4, threshold_2vs4 = threshold_stats_img(
+        z_map_2vs4,
+        two_sided=True,
+        alpha=P_CORRECTION,
+        cluster_threshold=CLUSTER_SIZE,
+        height_control=CORRECTION,
+    )
+
+    # two-sample ttest (two sided)
+    z_map_twosample = second_level_model_twosample.compute_contrast(
+        second_level_contrast="group",
+        output_type="z_score",
+    )
+    thresholded_map_twosample, threshold_twosample = threshold_stats_img(
+        z_map_twosample,
         two_sided=True,
         alpha=P_CORRECTION,
         cluster_threshold=CLUSTER_SIZE,
@@ -264,128 +324,41 @@ if METHOD == 'parametric':
     )
 
 
-    if GRADE == 'all':
-        # pairwise two-sample ttest (two sided)
-        z_map_1vs2 = second_level_model_1vs2.compute_contrast(
-            second_level_contrast="group",
-            output_type="z_score",
-        )
-        thresholded_map_1vs2, threshold_1vs2 = threshold_stats_img(
-            z_map_1vs2,
-            two_sided=True,
-            alpha=P_CORRECTION,
-            cluster_threshold=CLUSTER_SIZE,
-            height_control=CORRECTION,
-        )
 
-        # pairwise two-sample ttest (two sided)
-        z_map_1vs4 = second_level_model_1vs4.compute_contrast(
-            second_level_contrast="group",
-            output_type="z_score",
-        )
-        thresholded_map_1vs4, threshold_1vs4 = threshold_stats_img(
-            z_map_1vs4,
-            two_sided=True,
-            alpha=P_CORRECTION,
-            cluster_threshold=CLUSTER_SIZE,
-            height_control=CORRECTION,
-        )
+# save the z-map
+path = OUT_DIR / MODEL / SPACE / CONTRASTS
+path.mkdir(parents=True, exist_ok=True)
 
-        # pairwise two-sample ttest (two sided)
-        z_map_2vs4 = second_level_model_2vs4.compute_contrast(
-            second_level_contrast="group",
-            output_type="z_score",
-        )
-        thresholded_map_2vs4, threshold_2vs4 = threshold_stats_img(
-            z_map_2vs4,
-            two_sided=True,
-            alpha=P_CORRECTION,
-            cluster_threshold=CLUSTER_SIZE,
-            height_control=CORRECTION,
-        )
-
-        # two-sample ttest (two sided)
-        z_map_twosample = second_level_model_twosample.compute_contrast(
-            second_level_contrast="group",
-            output_type="z_score",
-        )
-        thresholded_map_twosample, threshold_twosample = threshold_stats_img(
-            z_map_twosample,
-            two_sided=True,
-            alpha=P_CORRECTION,
-            cluster_threshold=CLUSTER_SIZE,
-            height_control=CORRECTION,
-        )
-
-
-
-    # save the z-map
-    path = OUT_DIR / MODEL / SPACE / CONTRASTS
-    path.mkdir(parents=True, exist_ok=True)
-
-    if GRADE == 'all':
-        # pairwise two-sample 
-        file_name   = f"GRADE-{GRADE}_FWHM-{int(FWHM_SMOOTHING)}_p<{P_CORRECTION}_cls>{CLUSTER_SIZE}_z-map_1vs2.nii.gz"
-        output_path = path / file_name
-        thresholded_map_1vs2.to_filename(output_path)
-
-        # pairwise two-sample 
-        file_name   = f"GRADE-{GRADE}_FWHM-{int(FWHM_SMOOTHING)}_p<{P_CORRECTION}_cls>{CLUSTER_SIZE}_z-map_1vs4.nii.gz"
-        output_path = path / file_name
-        thresholded_map_1vs4.to_filename(output_path)
-
-        # pairwise two-sample 
-        file_name   = f"GRADE-{GRADE}_FWHM-{int(FWHM_SMOOTHING)}_p<{P_CORRECTION}_cls>{CLUSTER_SIZE}_z-map_2vs4.nii.gz"
-        output_path = path / file_name
-        thresholded_map_2vs4.to_filename(output_path)
-
-        # two-sample 
-        file_name   = f"GRADE-{GRADE}_FWHM-{int(FWHM_SMOOTHING)}_p<{P_CORRECTION}_cls>{CLUSTER_SIZE}_z-map_twosample.nii.gz"
-        output_path = path / file_name
-        thresholded_map_twosample.to_filename(output_path)
-
-    # brain-behavior 
-    file_name   = f"GRADE-{GRADE}_FWHM-{int(FWHM_SMOOTHING)}_p<{P_CORRECTION}_cls>{CLUSTER_SIZE}_z-map_acc.nii.gz"
+if GRADE == 'all':
+    # pairwise two-sample 
+    file_name   = f"GRADE-{GRADE}_FWHM-{int(FWHM_SMOOTHING)}_p<{P_CORRECTION}_cls>{CLUSTER_SIZE}_z-map_1vs2.nii.gz"
     output_path = path / file_name
-    thresholded_map_acc.to_filename(output_path)
+    thresholded_map_1vs2.to_filename(output_path)
 
-    # one-sample test 
-    file_name   = f"GRADE-{GRADE}_FWHM-{int(FWHM_SMOOTHING)}_p<{P_CORRECTION}_cls>{CLUSTER_SIZE}_z-map.nii.gz"
+    # pairwise two-sample 
+    file_name   = f"GRADE-{GRADE}_FWHM-{int(FWHM_SMOOTHING)}_p<{P_CORRECTION}_cls>{CLUSTER_SIZE}_z-map_1vs4.nii.gz"
     output_path = path / file_name
-    thresholded_map.to_filename(output_path)
+    thresholded_map_1vs4.to_filename(output_path)
 
-# % =====================
-# Non-Parametric: Permutation test
-elif METHOD == 'non-parametric':
-    # compute group-level mask
-    mask_img = compute_multi_epi_mask(beta_paths)
+    # pairwise two-sample 
+    file_name   = f"GRADE-{GRADE}_FWHM-{int(FWHM_SMOOTHING)}_p<{P_CORRECTION}_cls>{CLUSTER_SIZE}_z-map_2vs4.nii.gz"
+    output_path = path / file_name
+    thresholded_map_2vs4.to_filename(output_path)
 
-    # Build masker
-    nifti_masker = NiftiMasker(
-        mask_img=mask_img,
-        smoothing_fwhm=None,
-        standardize=False,
-    )
-    nifti_masker.fit(beta_paths)
+    # two-sample 
+    file_name   = f"GRADE-{GRADE}_FWHM-{int(FWHM_SMOOTHING)}_p<{P_CORRECTION}_cls>{CLUSTER_SIZE}_z-map_twosample.nii.gz"
+    output_path = path / file_name
+    thresholded_map_twosample.to_filename(output_path)
 
-    # shape: subjects × voxels
-    Y = nifti_masker.transform(beta_paths)
-    X = np.ones((len(beta_paths), 1))   # intercept-only model
+# brain-behavior 
+file_name   = f"GRADE-{GRADE}_FWHM-{int(FWHM_SMOOTHING)}_p<{P_CORRECTION}_cls>{CLUSTER_SIZE}_z-map_acc.nii.gz"
+output_path = path / file_name
+thresholded_map_acc.to_filename(output_path)
 
-    ols_outputs = permuted_ols(
-        X,  # this is equivalent to the design matrix, in array form
-        Y,
-        model_intercept=False,
-        masker=nifti_masker,
-        n_perm=10000,  # 100 for the sake of time. Ideally, this should be 10000.
-        verbose=1,   # display progress bar
-        n_jobs=2,
-        output_type='dict',    # can be changed to use more CPUs
-    )
-
-    # extract FWE corrected p-values
-    FWE_corr_pval     = ols_outputs['logp_max_t']
-    FWE_corr_pval_img = nifti_masker.inverse_transform(FWE_corr_pval.reshape(1,-1)) # p-values
+# one-sample test 
+file_name   = f"GRADE-{GRADE}_FWHM-{int(FWHM_SMOOTHING)}_p<{P_CORRECTION}_cls>{CLUSTER_SIZE}_z-map.nii.gz"
+output_path = path / file_name
+thresholded_map.to_filename(output_path)
 
 
 # %% =====================  Visualize
@@ -397,7 +370,7 @@ p001_unc = norm.isf(p_val)
 if 'images' in CONTRASTS and 'audios' in CONTRASTS:
     z_coords = np.arange(0, 20, 2)
 elif 'images' in CONTRASTS:
-    z_coords = np.arange(-15, -4, 1)  # from -15 to -5 inclusive
+    z_coords = np.arange(-16, -7, 1)  # from -16 to -5 inclusive
 elif 'audios' in CONTRASTS:
     z_coords = np.arange(-5, 10, 2) # from -5 to 5
 
@@ -411,126 +384,162 @@ else:
 dir = f"{FIG_DIR}/{MODEL}"
 os.makedirs(dir, exist_ok=True)
 
-if METHOD == 'parametric':
-    # Parametric: uncorrected p-value 
-    # compute threshold for z-value
 
-    # configure the figure
-    plotting_config = {
-        "display_mode": "z",
-        "cut_coords": z_coords,
-        "draw_cross": False,
-        "vmax": 5,
-        "vmin": 0,
-        "cmap": "hot",
-    }
+# Parametric: uncorrected p-value 
+# compute threshold for z-value
 
-    # plot the uncorrrected p-value figure 
-    """     display_unc = plotting.plot_stat_map(
-        z_map,
-        title=f"Grade-{GRADE} {contrast} (unc p<{P_CORRECTION})",
+# configure the figure
+plotting_config = {
+    "display_mode": "z",
+    "cut_coords": z_coords,
+    "draw_cross": False,
+    "vmax": 5,
+    "vmin": 0,
+    "cmap": "hot",
+}
+
+# plot the uncorrrected p-value figure 
+"""     display_unc = plotting.plot_stat_map(
+    z_map,
+    title=f"Grade-{GRADE} {contrast} (unc p<{P_CORRECTION})",
+    bg_img=TEMPLATE,
+    threshold=p001_unc,
+    **plotting_config,
+)
+display_unc.savefig(f"{dir}/Grade_{GRADE}_z-maps_{CONTRASTS}_FWHM{int(FWHM_SMOOTHING)}_p-val<{P_CORRECTION}.png", dpi=300)
+"""
+
+# plot the p-value with cluster size figure
+thresholded_map = image.math_img(
+    "img * (img > 0)",
+    img=thresholded_map
+) 
+display_FPR = plotting.plot_stat_map(
+    thresholded_map,
+    title=f"Grade-{GRADE} {contrast} (cluster-thr > {CLUSTER_SIZE}, p < {P_CORRECTION})",
+    bg_img=TEMPLATE,
+    threshold=threshold,
+    **plotting_config,
+)
+# Add contours for the clusters
+display_FPR.add_contours(
+    thresholded_map, 
+    levels=[threshold],       # level(s) to contour
+    colors='black',             # color of the outline
+    linewidths=1
+)
+# add pitative VWFA as reference
+vwfa_lh_path = TEMP_DIR / 'mask' / 'left_VWFA_pediatric_MNI.nii.gz'
+vwfa_rh_path = TEMP_DIR / 'mask' / 'right_VWFA_pediatric_MNI.nii.gz'
+vwfa_lh = image.load_img(vwfa_lh_path)
+vwfa_rh = image.load_img(vwfa_rh_path)
+vwfa_lh_data = vwfa_lh.get_fdata()
+vwfa_rh_data = vwfa_rh.get_fdata()
+n_lh = np.count_nonzero(vwfa_lh_data)
+n_rh = np.count_nonzero(vwfa_rh_data) 
+
+green_cmap = colors.ListedColormap(['springgreen'])
+blue_cmap = colors.ListedColormap(['dodgerblue'])
+# Add LH VWFA contour
+display_FPR.add_contours(
+    vwfa_lh,
+    levels=[0.5],
+    colors='springgreen',
+    linewidths=2
+)
+
+# Add RH VWFA contour
+display_FPR.add_contours(
+    vwfa_rh,
+    levels=[0.5],
+    colors='dodgerblue',
+    linewidths=2
+)
+
+# count the overlapping significant voxels
+overlap_lh = image.math_img(
+    "(img1 > 0) & (img2 > 0)",
+    img1=thresholded_map,
+    img2=vwfa_lh
+)
+
+overlap_rh = image.math_img(
+    "(img1 > 0) & (img2 > 0)",
+    img1=thresholded_map,
+    img2=vwfa_rh
+)
+n_vox_lh = int(np.sum(overlap_lh.get_fdata()))
+n_vox_rh = int(np.sum(overlap_rh.get_fdata()))
+
+print(f"-------{CONTRASTS}-------")
+print(f"VWFA LH overlapping significant voxels: {n_vox_lh}")
+print(f"VWFA LH overlapping volume %: {(n_vox_lh/n_lh)*100:.2f}%")
+print(f"VWFA RH overlapping significant voxels: {n_vox_rh}")
+print(f"VWFA RH overlapping volume %: {(n_vox_rh/n_rh)*100:.2f}%")
+
+# save the figure
+display_FPR.savefig(f"{dir}/Grade_{GRADE}_{CONTRASTS}_FWHM{int(FWHM_SMOOTHING)}_cluster-thr<{CLUSTER_SIZE}_p-val<{P_CORRECTION}_{CORRECTION}_{MASK}.png", dpi=300)
+
+
+if GRADE == 'all':
+    # plot the p-value with cluster size figure 
+    display_1vs2 = plotting.plot_stat_map(
+        thresholded_map_1vs2,
+        title=f"Grade-1 vs. 2 {contrast} (cluster-thr > {CLUSTER_SIZE}, p < {P_CORRECTION})",
         bg_img=TEMPLATE,
-        threshold=p001_unc,
-        **plotting_config,
-    )
-    display_unc.savefig(f"{dir}/Grade_{GRADE}_z-maps_{CONTRASTS}_FWHM{int(FWHM_SMOOTHING)}_p-val<{P_CORRECTION}.png", dpi=300)
-    """
-    # plot the p-value with cluster size figure
-    thresholded_map = image.math_img(
-        "img * (img > 0)",
-        img=thresholded_map
-    ) 
-    display_FPR = plotting.plot_stat_map(
-        thresholded_map,
-        title=f"Grade-{GRADE} {contrast} (cluster-thr > {CLUSTER_SIZE}, p < {P_CORRECTION})",
-        bg_img=TEMPLATE,
-        threshold=threshold,
+        threshold=threshold_1vs2,
         **plotting_config,
     )
     # Add contours for the clusters
-    display_FPR.add_contours(
-        thresholded_map, 
-        levels=[threshold],       # level(s) to contour
+    display_1vs2.add_contours(
+        thresholded_map_1vs2, 
+        levels=[threshold_1vs2],       # level(s) to contour
         colors='black',             # color of the outline
         linewidths=1
     )
-    display_FPR.savefig(f"{dir}/Grade_{GRADE}_{CONTRASTS}_FWHM{int(FWHM_SMOOTHING)}_cluster-thr<{CLUSTER_SIZE}_p-val<{P_CORRECTION}_{CORRECTION}_{MASK}.png", dpi=300)
-    
+    display_1vs2.savefig(f"{dir}/Grade_1vs2_{CONTRASTS}_FWHM{int(FWHM_SMOOTHING)}_cluster-thr<{CLUSTER_SIZE}_p-val<{P_CORRECTION}_{CORRECTION}.png", dpi=300)
 
-    if GRADE == 'all':
-        # plot the p-value with cluster size figure 
-        display_1vs2 = plotting.plot_stat_map(
-            thresholded_map_1vs2,
-            title=f"Grade-1 vs. 2 {contrast} (cluster-thr > {CLUSTER_SIZE}, p < {P_CORRECTION})",
-            bg_img=TEMPLATE,
-            threshold=threshold_1vs2,
-            **plotting_config,
-        )
-        # Add contours for the clusters
-        display_1vs2.add_contours(
-            thresholded_map_1vs2, 
-            levels=[threshold_1vs2],       # level(s) to contour
-            colors='black',             # color of the outline
-            linewidths=1
-        )
-        display_1vs2.savefig(f"{dir}/Grade_1vs2_{CONTRASTS}_FWHM{int(FWHM_SMOOTHING)}_cluster-thr<{CLUSTER_SIZE}_p-val<{P_CORRECTION}_{CORRECTION}.png", dpi=300)
-
-        # plot the p-value with cluster size figure 
-        display_1vs4 = plotting.plot_stat_map(
-            thresholded_map_1vs4,
-            title=f"Grade-1 vs. 4 {contrast} (cluster-thr > {CLUSTER_SIZE}, p < {P_CORRECTION})",
-            bg_img=TEMPLATE,
-            threshold=threshold_1vs4,
-            **plotting_config,
-        )
-        # Add contours for the clusters
-        display_1vs4.add_contours(
-            thresholded_map_1vs4, 
-            levels=[threshold_1vs4],    # level(s) to contour
-            colors='black',             # color of the outline
-            linewidths=1
-        )
-        display_1vs4.savefig(f"{dir}/Grade_1vs4_{CONTRASTS}_FWHM{int(FWHM_SMOOTHING)}_cluster-thr<{CLUSTER_SIZE}_p-val<{P_CORRECTION}_{CORRECTION}.png", dpi=300)
-
-        # plot the p-value with cluster size figure 
-        display_2vs4 = plotting.plot_stat_map(
-            thresholded_map_2vs4,
-            title=f"Grade-2 vs. 4 {contrast} (cluster-thr > {CLUSTER_SIZE}, p < {P_CORRECTION})",
-            bg_img=TEMPLATE,
-            threshold=threshold_2vs4,
-            **plotting_config,
-        )
-        # Add contours for the clusters
-        display_2vs4.add_contours(
-            thresholded_map_2vs4, 
-            levels=[threshold_2vs4],       # level(s) to contour
-            colors='black',             # color of the outline
-            linewidths=1
-        )
-        display_2vs4.savefig(f"{dir}/Grade_2vs4_{CONTRASTS}_FWHM{int(FWHM_SMOOTHING)}_cluster-thr<{CLUSTER_SIZE}_p-val<{P_CORRECTION}_{CORRECTION}.png", dpi=300)
-
-
-
-
-elif METHOD == 'non-parametric':
-    
-    # non-parametric: permutation test
-    display = plotting.plot_glass_brain(
-        FWE_corr_pval_img,
-        title=f"Grade-{GRADE} {contrast} (FWE p<0.1)",
-        threshold=-np.log10(P_CORRECTION),
-        colorbar=True,
-        display_mode='lyrz',  # show left, sagittal, coronal, axial views
-        plot_abs=False,     # keep sign info if you have positive/negative values
-        black_bg=False,
+    # plot the p-value with cluster size figure 
+    display_1vs4 = plotting.plot_stat_map(
+        thresholded_map_1vs4,
+        title=f"Grade-1 vs. 4 {contrast} (cluster-thr > {CLUSTER_SIZE}, p < {P_CORRECTION})",
+        bg_img=TEMPLATE,
+        threshold=threshold_1vs4,
+        **plotting_config,
     )
-    # display.savefig(f"{dir}/Grade_{GRADE}_z-maps_{CONTRASTS}_FWHM{int(FWHM_SMOOTHING)}_p-val<{P_CORRECTION}_glass.png", dpi=300)
-    plotting.show()
+    # Add contours for the clusters
+    display_1vs4.add_contours(
+        thresholded_map_1vs4, 
+        levels=[threshold_1vs4],    # level(s) to contour
+        colors='black',             # color of the outline
+        linewidths=1
+    )
+    display_1vs4.savefig(f"{dir}/Grade_1vs4_{CONTRASTS}_FWHM{int(FWHM_SMOOTHING)}_cluster-thr<{CLUSTER_SIZE}_p-val<{P_CORRECTION}_{CORRECTION}.png", dpi=300)
+
+    # plot the p-value with cluster size figure 
+    display_2vs4 = plotting.plot_stat_map(
+        thresholded_map_2vs4,
+        title=f"Grade-2 vs. 4 {contrast} (cluster-thr > {CLUSTER_SIZE}, p < {P_CORRECTION})",
+        bg_img=TEMPLATE,
+        threshold=threshold_2vs4,
+        **plotting_config,
+    )
+    # Add contours for the clusters
+    display_2vs4.add_contours(
+        thresholded_map_2vs4, 
+        levels=[threshold_2vs4],       # level(s) to contour
+        colors='black',             # color of the outline
+        linewidths=1
+    )
+    display_2vs4.savefig(f"{dir}/Grade_2vs4_{CONTRASTS}_FWHM{int(FWHM_SMOOTHING)}_cluster-thr<{CLUSTER_SIZE}_p-val<{P_CORRECTION}_{CORRECTION}.png", dpi=300)
+
+
+
 
 # glass brain:: one-sample test
 display = plotting.plot_glass_brain(
     thresholded_map,
-    title=f"Grade-{GRADE} {contrast} (cluster-thr > {CLUSTER_SIZE}, unc p < {P_CORRECTION})",
+    title=f"Grade-{GRADE} {contrast} (cluster-thr > {CLUSTER_SIZE}, pFDR < {P_CORRECTION})",
     threshold=threshold,
     colorbar=True,
     display_mode='lyrz',  # show left, sagittal, coronal, axial views
@@ -551,7 +560,7 @@ plotting.show()
 # glass brain:: brain-behavior
 display = plotting.plot_glass_brain(
     thresholded_map_acc,
-    title=f"Grade-{GRADE} {contrast} (cluster-thr > {CLUSTER_SIZE}, unc p < {P_CORRECTION})",
+    title=f"Grade-{GRADE} {contrast} (cluster-thr > 0, pFDR < {P_CORRECTION})",
     threshold=threshold_acc,
     colorbar=True,
     display_mode='lyrz',  # show left, sagittal, coronal, axial views
@@ -649,4 +658,176 @@ if GRADE == 'all':
     )
     display.savefig(f"{dir}/Grade_{GRADE}_z-maps_{CONTRASTS}_FWHM{int(FWHM_SMOOTHING)}_p-val<{P_CORRECTION}_glass_2vs4.png", dpi=300)
     plotting.show()
+
+
+
+
+# %%
+# =========================================================
+# ===  Brain regions specification with assiged cluster ===
+# =========================================================
+
+# === specify the target grade === 
+tar_grade = GRADE
+
+
+# === load the AAL atlas === 
+AAL_DIR      = TEMP_DIR / 'aal'
+atlas_fn     = AAL_DIR / 'ROI_MNI_V4.nii'
+atlas_img    = nib.load(atlas_fn)
+atlas_affine = atlas_img.affine
+atlas_data   = atlas_img.get_fdata()
+
+# Load the labels from the txt file
+atlas_labels = pd.read_csv(
+    f"{AAL_DIR}/ROI_MNI_V4.txt",
+    sep="\t",
+    header=None,
+    names=["index", "label"]
+) 
+
+# AAL MNI atlas
+fixed = ants.image_read(f"{AAL_DIR}/ROI_MNI_V4.nii")
+# T1w pediatric space
+moving = ants.image_read(str(TEMPLATE))
+
+# nonlinear registration
+reg = ants.registration(
+    fixed  = fixed,
+    moving = moving,
+    type_of_transform = "SyN"   # recommended
+)
+
+# === load the z-map === 
+path      = OUT_DIR / MODEL / SPACE / CONTRASTS
+file_name = f"GRADE-{tar_grade}_FWHM-{int(FWHM_SMOOTHING)}_p<{P_CORRECTION}_cls>{CLUSTER_SIZE}_z-map.nii.gz"
+filepath  = path / file_name
+data_img  = nib.load(filepath)
+data      = data_img.get_fdata()
+
+# Find the minimum positive value
+min_positive = data[data > 0].min()
+
+# find the MNI coordinates of a cluster
+cluster_mask = data != 0
+
+# Label connected clusters
+labeled_array, num_clusters = label(cluster_mask)
+print(f"Found {num_clusters} clusters")
+
+# Loop over clusters
+for i in range(1, num_clusters + 1):
+
+    cluster_data = data * (labeled_array == i)
+    max_val = np.max(cluster_data)
+    min_val = np.min(cluster_data)
+    if max_val > 0:
+        # Find the voxel of the maximum value in this cluster
+        voxel_index = np.unravel_index(
+            np.argmax(cluster_data), 
+            cluster_data.shape
+        )   
+    elif min_val < 0:
+        # Find the voxel of the minimum value in this cluster
+        voxel_index = np.unravel_index(
+            np.argmin(cluster_data), 
+            cluster_data.shape
+        )
+
+    # voxel index → pediatric world (mm)
+    ped_affine = data_img.affine
+    ped_coords = nib.affines.apply_affine(ped_affine, voxel_index)
+
+    pts = pd.DataFrame([{
+        "x": ped_coords[0],
+        "y": ped_coords[1],
+        "z": ped_coords[2]}])
+    
+    peak_mni_adult = ants.apply_transforms_to_points(
+        dim=3,
+        points=pts,
+        transformlist=reg['fwdtransforms']
+    )               
+    adult_coords = peak_mni_adult[['x','y','z']].values[0]
+    print("\n=========================")
+    print(f"Cluster {i}:")
+    print("AAL atlas MNI:", np.round(adult_coords).astype(int))
+
+    # ---------------------------------------------------------
+    # Convert adult MNI coords -> AAL voxel indices
+    # ---------------------------------------------------------
+    aal_voxel = nib.affines.apply_affine(
+        np.linalg.inv(atlas_affine),
+        adult_coords
+    )
+
+    aal_voxel = np.round(aal_voxel).astype(int)
+
+    # Check bounds
+    if np.any(aal_voxel < 0) or np.any(aal_voxel >= atlas_data.shape):
+        label_index = 0
+    else:
+        label_index = int(atlas_data[tuple(aal_voxel)])
+        if 9001 <= label_index <= 9170:
+            label_index = 0
+        else:
+            print("AAL index:", label_index)
+
+    if label_index == 0:
+        print("Region: no region")
+        print("Finding the nearest label...")
+
+        found = False
+
+        for r in range(1, 101):
+            if found:
+                break
+            # iterate voxels in the shell (cube)
+            i0, j0, k0 = aal_voxel
+            imin, imax = i0 - r, i0 + r
+            jmin, jmax = j0 - r, j0 + r
+            kmin, kmax = k0 - r, k0 + r
+
+            # iterate through the shell
+            candidates = []
+            for s in range(imin, imax + 1):
+                if found:
+                    break
+                if s < 0 or s >= atlas_data.shape[0]:
+                    continue
+
+                for j in range(jmin, jmax + 1):
+                    if found:
+                        break
+                    if j < 0 or j >= atlas_data.shape[1]:
+                        continue
+
+                    for k in range(kmin, kmax + 1):
+                        if k < 0 or k >= atlas_data.shape[2]:
+                            continue
+
+                        lbl = int(atlas_data[s, j, k])
+                        if lbl != 0:
+                           # skip cerebellum labels
+                            if 9001 <= lbl <= 9170:
+                                continue
+
+                            index = lbl
+                            region_name = atlas_labels[atlas_labels['label'] == index]
+                            print("Nearest Region:", region_name['index'].values[0])
+                                
+                            found = True
+                            break
+    else:
+        region_name = atlas_labels[atlas_labels['label'] == label_index]  # AAL labels start at 1
+        print("Region:", region_name['index'].values[0])
+
+    # Optional: get the cluster size in voxels
+    cluster_size = np.sum(labeled_array == i)
+    
+    print(f"Peak value: {cluster_data[voxel_index]:.2f}, "
+          f"Size: {cluster_size} voxels")
+
+
+
 # %%

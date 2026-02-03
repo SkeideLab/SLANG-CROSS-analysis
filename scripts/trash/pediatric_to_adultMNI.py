@@ -19,21 +19,22 @@ import pandas as pd
 
 # %%
 # ===  FIXED: Parameters ===
-ANALY_DIR    = Path('/ptmp/kazma/SLANG-CROSS-analysis')
+ANALY_DIR    = Path('/work_beegfs/suknp132/SLANG-CROSS-analysis')
 DERIV_DIR    = ANALY_DIR / 'derivatives'
 FIG_DIR      = ANALY_DIR / 'figures'
 OUT_DIR      = ANALY_DIR / 'outputs'
 DEMO_DIR     = ANALY_DIR / 'demographics'
+TEMP_DIR     = ANALY_DIR / 'templates'
 # === Parameters ===
 MODEL          = 'glm'
 METHOD         = 'parametric' # 'parametric' 'non-parametric'
 SPACE          = 'MNIPediatricAsym_cohort-4_res-2'
-CONTRASTS      = 'images_words-images_pseudo'
-GRADE          = 'all' # 1, 2, 4 or all
+CONTRASTS      = 'images_pseudo'
+GRADE          = '4' # 1, 2, 4 or all
 FWHM_SMOOTHING = 9.0 # 6.0, 9.0, 12.0
-CORRECTION     = 'fpr' # fdr, fpr 
-P_CORRECTION   = 0.001 # 0.001, 0.05
-CLUSTER_SIZE   = 10
+CORRECTION     = 'fdr' # fdr, fpr 
+P_CORRECTION   = 0.05 # 0.001, 0.05
+CLUSTER_SIZE   = 100
 EXC_SUBJECTS   = ['108', '111', '113', '116', '118', '120', '121', '122', '124', '125', '126', '128', '201', '205', '206', '208', '220', '225', '226', '227', '405', '406', '408', '409', '410', '421', '422', '423', '424', '427', '430', '434']
 # Retrieve the T1-weighted template for cohort 4 (7.5-13.5yrs) at 2mm resolution
 TEMPLATE       =  tflow.get(
@@ -51,6 +52,11 @@ TEMPLATE       =  tflow.get(
                 'images_pseudo'
                 'audios_pseudo'
                 'images_words+audios_words-images_pseudo+audios_pseudo' """
+
+""" # convert the VWFA coordinate in adult MNI for pediatrci MNI
+adultMNI  = np.array(MNI_VWFA)
+scale     = np.array([1.21988, 1.23510, 1.28654])
+ped_coord = adultMNI / scale """
 
 # %% =========== convert Pediatric to Adult
 # adult MNI
@@ -74,7 +80,7 @@ reg = ants.registration(
 
 if MODEL=='glm':
     path      = OUT_DIR / MODEL / SPACE / CONTRASTS
-    file_name = f"GRADE-{GRADE}_FWHM-{int(FWHM_SMOOTHING)}_p<{P_CORRECTION}_cls>{CLUSTER_SIZE}_z-map_1vs4.nii.gz"
+    file_name = f"GRADE-{GRADE}_FWHM-{int(FWHM_SMOOTHING)}_p<{P_CORRECTION}_cls>{CLUSTER_SIZE}_z-map.nii.gz"
 elif MODEL=='anova':
     path      = OUT_DIR / MODEL / CONTRASTS
     file_name = f"p<{P_CORRECTION}_cls>{CLUSTER_SIZE}_f-map.nii.gz"
@@ -82,6 +88,10 @@ elif MODEL=='anova':
 filepath  = path / file_name
 data_img  = nib.load(filepath)
 data      = data_img.get_fdata()
+
+# Find the minimum positive value
+min_positive = data[data > 0].min()
+
 # find the MNI coordinates of a cluster
 cluster_mask = data != 0
 
@@ -92,24 +102,34 @@ print(f"Found {num_clusters} clusters")
 # glass brain
 display = plotting.plot_glass_brain(
     data_img,
-    title=f"Grade-{GRADE} (cluster-thr < {CLUSTER_SIZE}, unc p<{P_CORRECTION})",
-    threshold=3,
+    title=f"Grade-{GRADE} (cluster-thr < {CLUSTER_SIZE}, pFDR<{P_CORRECTION})",
+    threshold=min_positive,
     colorbar=True,
     display_mode='lyrz',  # show left, sagittal, coronal, axial views
     plot_abs=False,     # keep sign info if you have positive/negative values
     black_bg=False,
-    # vmin=0,
+    vmin=0,
 )
 plotting.show()
 
 
 # % =============================
 # atlas
-aal = datasets.fetch_atlas_aal(version='SPM12')
+# aal = datasets.fetch_atlas_aal(version='SPM12')
+AAL_DIR = TEMP_DIR / 'aal'
+
+atlas_img = nib.load(f"{AAL_DIR}/ROI_MNI_V4.nii")
 # atlas maps and labels
-atlas_img = nib.load(aal['maps'])
+# atlas_img = nib.load(aal['maps'])
 atlas_data = atlas_img.get_fdata()
-atlas_labels = aal['labels']  
+# atlas_labels = aal['labels'] 
+# Load the labels from the txt file
+atlas_labels = pd.read_csv(
+    f"{AAL_DIR}/ROI_MNI_V4.txt",
+    sep="\t",
+    header=None,
+    names=["index", "label"]
+) 
 atlas_affine = atlas_img.affine
 
 # Loop over clusters
@@ -133,7 +153,7 @@ for i in range(1, num_clusters + 1):
             cluster_data.shape
         )
 
-    # voxel index → pediatric wordl (mm)
+    # voxel index → pediatric world (mm)
     ped_affine = data_img.affine
     ped_coords = nib.affines.apply_affine(ped_affine, voxel_index)
     
@@ -145,7 +165,7 @@ for i in range(1, num_clusters + 1):
     peak_mni_adult = ants.apply_transforms_to_points(
         dim=3,
         points=pts,
-        transformlist=reg['invtransforms']
+        transformlist=reg['fwdtransforms']
     )               
     adult_coords = peak_mni_adult[['x','y','z']].values[0]
     print("\n=========================")
@@ -204,14 +224,14 @@ for i in range(1, num_clusters + 1):
                         lbl = int(atlas_data[s, j, k])
                         if lbl != 0:
                             index = lbl
-                            region_name = atlas_labels[aal.indices.index(str(index))]
-                            print("Nearest Region:", region_name)
+                            region_name = atlas_labels[atlas_labels['label'] == index]
+                            print("Nearest Region:", region_name['index'].values[0])
                                 
                             found = True
                             break
     else:
-        region_name = atlas_labels[aal.indices.index(str(label_index))]  # AAL labels start at 1
-        print("Region:", region_name)
+        region_name = atlas_labels[atlas_labels['label'] == label_index]  # AAL labels start at 1
+        print("Region:", region_name['index'].values[0])
 
     # Optional: get the cluster size in voxels
     cluster_size = np.sum(labeled_array == i)
