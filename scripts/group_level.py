@@ -27,6 +27,8 @@ from nilearn.mass_univariate import permuted_ols
 from nilearn.maskers import NiftiMasker
 from nilearn.masking import compute_multi_epi_mask
 from matplotlib import colors
+from nilearn.datasets import fetch_atlas_harvard_oxford
+from scipy.ndimage import distance_transform_edt
 
 # %%
 # ===  FIXED: Parameters ===
@@ -36,6 +38,7 @@ FIG_DIR      = ANALY_DIR / 'figures'
 OUT_DIR      = ANALY_DIR / 'outputs'
 DEMO_DIR     = ANALY_DIR / 'demographics'
 TEMP_DIR     = ANALY_DIR / 'templates'
+MASK_DIR     = TEMP_DIR / 'mask'
 
 # === Parameters ===
 MODEL          = 'glm'
@@ -671,34 +674,67 @@ if GRADE == 'all':
 tar_grade = GRADE
 
 
-# === load the AAL atlas === 
-AAL_DIR      = TEMP_DIR / 'aal'
-atlas_fn     = AAL_DIR / 'ROI_MNI_V4.nii'
-atlas_img    = nib.load(atlas_fn)
-atlas_affine = atlas_img.affine
-atlas_data   = atlas_img.get_fdata()
-
+# Fetch Harvard-Oxford cortical + subcortical atlas
+harvard_oxford_atlas = datasets.fetch_atlas_harvard_oxford('cort-maxprob-thr25-2mm')
 # Load the labels from the txt file
-atlas_labels = pd.read_csv(
-    f"{AAL_DIR}/ROI_MNI_V4.txt",
-    sep="\t",
-    header=None,
-    names=["index", "label"]
-) 
+atlas_labels         = harvard_oxford_atlas.lut
+# Path to atlas NIfTI file
+atlas_img_nib        = harvard_oxford_atlas['maps']  # or .maps
+# Save to temp file
+atlas_path           = '/tmp/harvard_oxford_atlas.nii.gz'
+atlas_img_nib.to_filename(atlas_path)
 
-# AAL MNI atlas
-fixed = ants.image_read(f"{AAL_DIR}/ROI_MNI_V4.nii")
-# T1w pediatric space
-moving = ants.image_read(str(TEMPLATE))
 
-# nonlinear registration
-reg = ants.registration(
-    fixed  = fixed,
-    moving = moving,
-    type_of_transform = "SyN"   # recommended
+atlas_img = ants.image_read(atlas_path)
+ped_img   = ants.image_read(str(TEMPLATE))
+ped_nifti = nib.load(TEMPLATE)
+
+warp_path   = str(MASK_DIR / 'MNI6_to_Pediatric_1Warp.nii.gz')
+affine_path = str(MASK_DIR / 'MNI6_to_Pediatric_0GenericAffine.mat')
+
+forward_transforms = [
+    warp_path, 
+    affine_path
+]
+
+# Transform
+pediatric_atlas_ants = ants.apply_transforms(
+    fixed=ped_img,
+    moving=atlas_img,
+    transformlist=forward_transforms,
+    interpolator='genericLabel' 
 )
+pediatric_atlas_data = pediatric_atlas_ants.numpy().astype(np.int16)
+# Convert pediatric atlas data back to NIfTI
+pediatric_atlas      = nib.Nifti1Image(pediatric_atlas_data, ped_nifti.affine)
 
-# === load the z-map === 
+
+# -------------------------------
+# % === Visualization ===
+# -------------------------------
+# Define single coordinates for each view
+z_coord = -12  # One axial slice
+y_coord = -57  # One coronal slice (middle of your range)
+x_coord = -45  # One sagittal slice (middle of your range)
+# configure the figure
+plotting_config = {
+    "display_mode": "ortho",
+    "cut_coords": (x_coord, y_coord, z_coord),
+    "draw_cross": False,
+    "bg_img": TEMPLATE,
+}
+
+# plot the mask figure 
+display_ventral = plotting.plot_roi(
+    pediatric_atlas,
+    colorbar=False,
+    **plotting_config,
+)
+plotting.show()
+
+
+
+# % === load the z-map === 
 path      = OUT_DIR / MODEL / SPACE / CONTRASTS
 file_name = f"GRADE-{tar_grade}_FWHM-{int(FWHM_SMOOTHING)}_p<{P_CORRECTION}_cls>{CLUSTER_SIZE}_z-map.nii.gz"
 filepath  = path / file_name
@@ -714,6 +750,14 @@ cluster_mask = data != 0
 # Label connected clusters
 labeled_array, num_clusters = label(cluster_mask)
 print(f"Found {num_clusters} clusters")
+
+
+# for every voxels, givs indices of nearest labeled voxel
+labeled_mask = pediatric_atlas_data > 0
+distances, nearest_indices = distance_transform_edt(
+    ~labeled_mask,            # background voxels
+    return_indices=True
+)
 
 # Loop over clusters
 for i in range(1, num_clusters + 1):
@@ -734,100 +778,32 @@ for i in range(1, num_clusters + 1):
             cluster_data.shape
         )
 
-    # voxel index → pediatric world (mm)
-    ped_affine = data_img.affine
-    ped_coords = nib.affines.apply_affine(ped_affine, voxel_index)
-
-    pts = pd.DataFrame([{
-        "x": ped_coords[0],
-        "y": ped_coords[1],
-        "z": ped_coords[2]}])
-    
-    peak_mni_adult = ants.apply_transforms_to_points(
-        dim=3,
-        points=pts,
-        transformlist=reg['fwdtransforms']
-    )               
-    adult_coords = peak_mni_adult[['x','y','z']].values[0]
-    print("\n=========================")
-    print(f"Cluster {i}:")
-    print("AAL atlas MNI:", np.round(adult_coords).astype(int))
-
-    # ---------------------------------------------------------
-    # Convert adult MNI coords -> AAL voxel indices
-    # ---------------------------------------------------------
-    aal_voxel = nib.affines.apply_affine(
-        np.linalg.inv(atlas_affine),
-        adult_coords
-    )
-
-    aal_voxel = np.round(aal_voxel).astype(int)
-
-    # Check bounds
-    if np.any(aal_voxel < 0) or np.any(aal_voxel >= atlas_data.shape):
-        label_index = 0
+    # get the label value
+    atlas_index = pediatric_atlas_data[voxel_index]
+    if atlas_index      != 0:
+        outside = False
+        atlas_label_row = atlas_labels.loc[atlas_labels['index'] == atlas_index]
     else:
-        label_index = int(atlas_data[tuple(aal_voxel)])
-        if 9001 <= label_index <= 9170:
-            label_index = 0
-        else:
-            print("AAL index:", label_index)
+        outside = True
+        nearest_voxel = tuple(nearest_indices[:, voxel_index[0], voxel_index[1], voxel_index[2]])
+        nearest_label_value = pediatric_atlas_data[nearest_voxel]
+        atlas_label_row = atlas_labels.loc[atlas_labels['index'] == nearest_label_value]
 
-    if label_index == 0:
-        print("Region: no region")
-        print("Finding the nearest label...")
+    # Voxel -> MNI world coordinates
+    voxel_homogeneous = np.array(voxel_index + (1,))
+    mni_mm = ped_nifti.affine.dot(voxel_homogeneous)[:3]
 
-        found = False
-
-        for r in range(1, 101):
-            if found:
-                break
-            # iterate voxels in the shell (cube)
-            i0, j0, k0 = aal_voxel
-            imin, imax = i0 - r, i0 + r
-            jmin, jmax = j0 - r, j0 + r
-            kmin, kmax = k0 - r, k0 + r
-
-            # iterate through the shell
-            candidates = []
-            for s in range(imin, imax + 1):
-                if found:
-                    break
-                if s < 0 or s >= atlas_data.shape[0]:
-                    continue
-
-                for j in range(jmin, jmax + 1):
-                    if found:
-                        break
-                    if j < 0 or j >= atlas_data.shape[1]:
-                        continue
-
-                    for k in range(kmin, kmax + 1):
-                        if k < 0 or k >= atlas_data.shape[2]:
-                            continue
-
-                        lbl = int(atlas_data[s, j, k])
-                        if lbl != 0:
-                           # skip cerebellum labels
-                            if 9001 <= lbl <= 9170:
-                                continue
-
-                            index = lbl
-                            region_name = atlas_labels[atlas_labels['label'] == index]
-                            print("Nearest Region:", region_name['index'].values[0])
-                                
-                            found = True
-                            break
-    else:
-        region_name = atlas_labels[atlas_labels['label'] == label_index]  # AAL labels start at 1
-        print("Region:", region_name['index'].values[0])
-
-    # Optional: get the cluster size in voxels
+    # cluster size
     cluster_size = np.sum(labeled_array == i)
-    
-    print(f"Peak value: {cluster_data[voxel_index]:.2f}, "
-          f"Size: {cluster_size} voxels")
 
+    print("============================================")
+    print(f"Cluster-{i}")
+    print("nearest label") if outside else None
+    print(atlas_label_row)
+    print(f"MNI (mm) {mni_mm}")
+    print(f"Peak value: {cluster_data[voxel_index]:.2f}, "
+        f"Size: {cluster_size} voxels")
+    print("============================================")
 
 
 # %%
