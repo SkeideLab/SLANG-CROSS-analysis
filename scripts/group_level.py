@@ -98,36 +98,13 @@ for sub in subjects:
     acc_lists.append(acc_mean)
     rt_lists.append(rt_mean)
 
-# get the sex info
-path   = DEMO_DIR / 'scanning_protocol.xlsx'
-sex_df = pd.read_excel(path)
-sex_df = sex_df.iloc[1:].reset_index(drop=True)
-sex_df = sex_df[['participant_id', 'age_years', 'age_months']]
-sex_df['participant_id'] = sex_df['participant_id'].astype(str)
-sex_df.loc[sex_df['participant_id'] == "435 (228)", 'participant_id'] = "435"
-age_lists = []
-for sub in subject_names:
-    age = sex_df.loc[sex_df['participant_id'] == sub, 'age_years'].values[0]
-    age_lists.append(age)
-age_counts = Counter(age_lists)
-age_mean = np.mean(age_lists)
-age_sd   = np.std(age_lists, ddof=1)
-print(age_mean)
-print(age_sd)
-
 
 # model design
 # one sample t-test (one-sided)
 design_matrix = pd.DataFrame({
     "intercept": [1] * len(beta_paths),
-    # "age": age_lists,
 })
-# brain-behavior (one-sided)
-""" design_matrix_acc = pd.DataFrame({
-    "intercept": [1] * len(beta_paths),
-    "accuracy": acc_lists,
-    "age": age_lists
-}) """
+
 
 
 if GRADE == 'all':
@@ -200,10 +177,7 @@ second_level_model = second_level_model.fit(
     beta_paths,
     design_matrix=design_matrix,
 )
-""" second_level_model_acc = second_level_model_acc.fit(
-    beta_paths,
-    design_matrix=design_matrix_acc,
-) """
+
 if GRADE == 'all':
     second_level_model_twosample = second_level_model_twosample.fit(
         beta_paths,
@@ -228,11 +202,7 @@ z_map = second_level_model.compute_contrast(
     second_level_contrast="intercept",
     output_type="z_score",
 )
-# brain-behavior correlation
-""" z_map_acc = second_level_model_acc.compute_contrast(
-    second_level_contrast="accuracy",
-    output_type="z_score",
-) """
+
 
 if MASK == 'none':
     brain_mask_fn  = MASK_DIR / 'brain_pediatric_MNI.nii.gz'
