@@ -12,6 +12,7 @@ from nilearn.plotting import plot_glass_brain, plot_stat_map, show
 from nilearn.plotting import plot_stat_map
 from nilearn import plotting, image, datasets
 import ants
+print(ants.__version__)
 
 # -------------------------------
 # %% === Paths & parameters ===
@@ -64,12 +65,12 @@ Adult_MNI6_T1 = tflow.get(
     suffix='T1w')
 
 # Harvard-Oxford MNI6Asym
-HO_ATLAS_MNI6 = datasets.fetch_atlas_harvard_oxford(
-    'cort-maxprob-thr25-2mm')
+HO_ATLAS_MNI6 = datasets.fetch_atlas_harvard_oxford('cort-maxprob-thr25-2mm')
+
 
 
 # === VWFA parameters ===
-RADIUS = 6  # mm
+RADIUS      = 6  # mm
 VWFA_CENTER = np.array([-45, -57, -12])  # MNI coordinates (left VWFA)
 
 # === Ventral mask parameters ===
@@ -83,11 +84,11 @@ z_min, z_max = -28, 4
 # %% === Load MNI template in adult MNI ===
 # -------------------------------
 mni_img = nib.load(Adult_MNI_T1)
-affine = mni_img.affine
-shape = mni_img.shape
+affine  = mni_img.affine
+shape   = mni_img.shape
 
 # % === Load # Harvard-Oxford atlas in adult MNI ===
-HO_img = nib.load(ATLAS)
+HO_img  = nib.load(ATLAS)
 HO_data = HO_img.get_fdata()
 HO_mask = (HO_data > 0)
 
@@ -98,9 +99,9 @@ HO_mask = (HO_data > 0)
 # %% === Create spherical VWFA mask ===
 # -------------------------------
 # Generate voxel coordinates
-ijk = np.indices(shape).reshape(3, -1)
+ijk   = np.indices(shape).reshape(3, -1)
 ijk_h = np.vstack([ijk, np.ones((1, ijk.shape[1]))])
-xyz = (affine @ ijk_h)[:3, :].T
+xyz   = (affine @ ijk_h)[:3, :].T
 
 # Compute distances from VWFA center
 dist = np.linalg.norm(xyz - VWFA_CENTER, axis=1)
@@ -124,8 +125,69 @@ nib.save(vwfa_mask_img, vwfa_mask_path)
 print(f"VWFA mask saved to: {vwfa_mask_path}")
 
 
+
+
 # --------------------------------------------
-# %% === Create Auditory mask in adult MNI ===
+# %% === Create Brain mask (no cerebellum) in adult MNI6Asym ===
+# --------------------------------------------
+# ATLAS in MNI6Asym 2mm
+atlas_mni6  = HO_ATLAS_MNI6.maps
+atlas_data  = atlas_mni6.get_fdata()
+
+# 1 for any labeled voxel, 0 for background
+brain_mask = (atlas_data > 0).astype(np.uint8)
+
+# convert it into nifti
+brain_mask_img = nib.Nifti1Image(brain_mask, atlas_mni6.affine)
+
+# path
+brain_mask_path  = MASK_DIR / "brain_mask_adult_MNI.nii.gz"
+
+# save
+nib.save(brain_mask_img, brain_mask_path)
+print(f"brain mask saved to: {brain_mask_path}")
+
+# --------------------------------------------
+# convert it into Pediatric MNI
+
+pediatric_img = ants.image_read(str(Pediatric_MNI_T1))
+
+brain_mask  = ants.image_read(str(brain_mask_path))
+
+warp_path   = str(MASK_DIR / 'MNI6_to_Pediatric_1Warp.nii.gz')
+affine_path = str(MASK_DIR / 'MNI6_to_Pediatric_0GenericAffine.mat')
+
+forward_transforms = [warp_path, affine_path]
+pediatric_brain = ants.apply_transforms(
+    fixed=pediatric_img,
+    moving=brain_mask,
+    transformlist=forward_transforms,
+    interpolator='genericLabel' 
+    )
+brain_data  = pediatric_brain.numpy().astype(bool)
+
+# % === Save as NifTi ===
+
+# Pediatric T1w
+ped_img  = nib.load(Pediatric_MNI_T1)
+
+# convert to nifti
+brain_img = nib.Nifti1Image(
+    brain_data.astype(np.int16),
+    affine=ped_img.affine
+)
+
+# path
+brain_path  = MASK_DIR / "brain_pediatric_MNI.nii.gz"
+
+# save
+nib.save(brain_img, brain_path)
+
+
+
+
+# --------------------------------------------
+# %% === Create Auditory mask in adult MNI6Asym ===
 # --------------------------------------------
 # ATLAS in MNI6Asym 2mm
 atlas_mni6  = HO_ATLAS_MNI6.maps
@@ -133,45 +195,86 @@ atlas_data  = atlas_mni6.get_fdata()
 
 # ATLAS Labels
 atlas_labels = HO_ATLAS_MNI6.lut
+roi_dict={}
+for name in atlas_labels['name']:
+    if name == 'Background':
+        continue
+    roi_dict.setdefault(name, []).append(name)
 
-# Target regions
-names = [
-    "Superior Temporal Gyrus, anterior division",
-    "Superior Temporal Gyrus, posterior division",
-    "Heschl's Gyrus (includes H1 and H2)",
-    "Planum Temporale",
-    "Planum Polare",
-    ]
 
-# Get the index and Mask the regions out
-audiotry_ind       = atlas_labels.loc[
-    atlas_labels['name'].isin(names),
-    'index'
-    ].values
-audiotry_mask_data = np.where(np.isin(atlas_data, audiotry_ind), atlas_data, 0)
+""" # ROI lists
+roi_dict = {
+    "IFG": [
+        "Inferior Frontal Gyrus, pars triangularis",
+        "Inferior Frontal Gyrus, pars opercularis",
+    ],
+    "STG": [
+        "Superior Temporal Gyrus, anterior division",
+        "Superior Temporal Gyrus, posterior division",
+    ],
+    "MTG": [
+        "Middle Temporal Gyrus, anterior division",
+        "Middle Temporal Gyrus, posterior division",
+        "Middle Temporal Gyrus, temporooccipital part",
+    ],
+    "STG-MTG": [
+        "Superior Temporal Gyrus, anterior division",
+        "Superior Temporal Gyrus, posterior division",
+        "Middle Temporal Gyrus, anterior division",
+        "Middle Temporal Gyrus, posterior division",
+        "Middle Temporal Gyrus, temporooccipital part",
+    ],
+    "A1": [
+        "Heschl's Gyrus (includes H1 and H2)",
+        "Planum Temporale",
+        "Planum Polare",
+    ],
+    "AG-SMG": [
+        "Angular Gyrus",
+        "Supramarginal Gyrus, anterior division",
+        "Supramarginal Gyrus, posterior division",
+    ],
+}
+roi_coords = {
+    "IFG":     (-48, 22, 10),
+    "STG":     (-58, -22, 6),
+    "MTG":     (-60, -40, -6),
+    "STG-MTG": (-58, -22, 6),
+    "A1":      (-42, -22, 7),
+    "AG-SMG":  (-48, -56, 42),
+} """
 
-# Split the hemisphere
-left_mask  = audiotry_mask_data.copy()
-right_mask = audiotry_mask_data.copy()
-# get the middle x-coordinate
-mid_x = atlas_data.shape[0] // 2
-# assign zero 
-left_mask[mid_x:,:,:] = 0
-right_mask[:mid_x,:,:] = 0
+for roi_name, names in roi_dict.items():
 
-# % === Save as NIfTI ===
-# -------------------------------
-# Convert back to NIfTI
-stg_left_mask_nifti  = nib.Nifti1Image(left_mask, atlas_mni6.affine)
-stg_right_mask_nifti = nib.Nifti1Image(right_mask, atlas_mni6.affine)
-# path
-left_auditory_path  = MASK_DIR / "left_auditory_adult_MNi.nii.gz"
-right_auditory_path = MASK_DIR / "right_auditory_adult_MNi.nii.gz"
-# save
-nib.save(stg_left_mask_nifti, left_auditory_path)
-nib.save(stg_right_mask_nifti, right_auditory_path)
-print(f"left auditory mask saved to: {left_auditory_path}")
-print(f"right auditory mask saved to: {right_auditory_path}")
+    # Get the index and Mask the regions out
+    audiotry_ind       = atlas_labels.loc[
+        atlas_labels['name'].isin(names),
+        'index'
+        ].values
+    audiotry_mask_data = np.where(np.isin(atlas_data, audiotry_ind), atlas_data, 0)
+
+    # Split the hemisphere
+    left_mask  = audiotry_mask_data.copy()
+    right_mask = audiotry_mask_data.copy()
+    # get the middle x-coordinate
+    mid_x = atlas_data.shape[0] // 2
+    # assign zero 
+    left_mask[mid_x:,:,:] = 0
+    right_mask[:mid_x,:,:] = 0
+
+    # % === Save as NIfTI ===
+    # -------------------------------
+    # Convert back to NIfTI
+    stg_left_mask_nifti  = nib.Nifti1Image(left_mask, atlas_mni6.affine)
+    stg_right_mask_nifti = nib.Nifti1Image(right_mask, atlas_mni6.affine)
+    # path
+    left_auditory_path  = MASK_DIR / f"left_{roi_name}_adult_MNI.nii.gz"
+    right_auditory_path = MASK_DIR / f"right_{roi_name}_adult_MNI.nii.gz"
+    # save
+    nib.save(stg_left_mask_nifti, left_auditory_path)
+    nib.save(stg_right_mask_nifti, right_auditory_path)
+    print(f"left {roi_name} mask saved to: {left_auditory_path}")
+    print(f"right {roi_name} mask saved to: {right_auditory_path}")
 
 
 
@@ -233,7 +336,7 @@ fixed = ants.image_read(str(Pediatric_MNI_T1))
 out = str(MASK_DIR / 'MNI_to_Pediatric_')
 reg = ants.registration(
     fixed  = fixed, # pediatric space
-    moving = moving, # aduklt space
+    moving = moving, # adult space
     type_of_transform = "SyN",   # recommended
     outprefix=out
 )
@@ -258,15 +361,7 @@ print(f"Transforms saved to {MASK_DIR}")
 
 
 # %% === Conversion to pediatric space ===
-# Adult -> Pediatric
-warp_path   = str(MASK_DIR / 'MNI_to_Pediatric_1Warp.nii.gz')
-affine_path = str(MASK_DIR / 'MNI_to_Pediatric_0GenericAffine.mat')
-forward_transforms = [
-    warp_path , 
-    affine_path
-]
-
-rois = ['ventral', 'VWFA']
+rois = ['ventral', 'VWFA'] + list(roi_dict.keys())
 
 for roi in rois:
         
@@ -280,6 +375,14 @@ for roi in rois:
     right_ventral_mask = ants.image_read(str(right_path))
 
     # Transform
+    if roi in roi_dict.keys():
+        warp_path   = str(MASK_DIR / 'MNI6_to_Pediatric_1Warp.nii.gz')
+        affine_path = str(MASK_DIR / 'MNI6_to_Pediatric_0GenericAffine.mat')
+    else:
+        warp_path   = str(MASK_DIR / 'MNI_to_Pediatric_1Warp.nii.gz')
+        affine_path = str(MASK_DIR / 'MNI_to_Pediatric_0GenericAffine.mat')
+
+    forward_transforms = [warp_path, affine_path]
     pediatric_ventral_left = ants.apply_transforms(
         fixed=pediatric_img,
         moving=left_ventral_mask,
@@ -292,8 +395,12 @@ for roi in rois:
         transformlist=forward_transforms,
         interpolator='genericLabel' 
     )
-    left_ventral_data   = pediatric_ventral_left.numpy().astype(bool)
-    right_ventral_data  = pediatric_ventral_right.numpy().astype(bool)
+    if roi in roi_dict.keys():
+        left_ventral_data   = pediatric_ventral_left.numpy().astype(np.int16)
+        right_ventral_data  = pediatric_ventral_right.numpy().astype(np.int16)
+    else:
+        left_ventral_data   = pediatric_ventral_left.numpy().astype(bool)
+        right_ventral_data  = pediatric_ventral_right.numpy().astype(bool)
 
 
     # GM probability mask 
@@ -304,25 +411,42 @@ for roi in rois:
     GM_THRESH = 0.4
 
     # Ventral
-    left_ventral_clean  = left_ventral_data  & (GM_data > GM_THRESH) 
-    right_ventral_clean = right_ventral_data  & (GM_data > GM_THRESH) 
+    if roi in roi_dict.keys():
+        # keep labels where GM > threshold, else 0
+        left_ventral_clean  = left_ventral_data.copy()
+        left_ventral_clean[GM_data <= GM_THRESH] = 0
+
+        right_ventral_clean = right_ventral_data.copy()
+        right_ventral_clean[GM_data <= GM_THRESH] = 0
+    else:
+        left_ventral_clean  = left_ventral_data  & (GM_data > GM_THRESH) 
+        right_ventral_clean = right_ventral_data  & (GM_data > GM_THRESH) 
 
     # ===  Describe the characteristic of mask === 
     voxel_sizes      = GM_img.header.get_zooms()  # should be (2.0, 2.0, 2.0)
     voxel_volume     = voxel_sizes[0] * voxel_sizes[1] * voxel_sizes[2]
 
-    left_volume_mm3  = voxel_volume * np.sum(left_ventral_clean)
-    right_volume_mm3 = voxel_volume * np.sum(right_ventral_clean)
+    if roi in roi_dict.keys():
+        n_vox_left  = np.sum(left_ventral_clean > 0)
+        n_vox_right = np.sum(right_ventral_clean > 0)
+    else:
+        n_vox_left  = np.sum(left_ventral_clean)
+        n_vox_right = np.sum(right_ventral_clean)
+
+    left_volume_mm3  = voxel_volume * n_vox_left
+    right_volume_mm3 = voxel_volume * n_vox_right
+
 
     # ventral: print basic info
     print(f"\n{roi}: Left hemisphere")
     print(f"Mask created with shape: {left_ventral_clean.shape}")
-    print(f"Number of voxels in mask: {np.sum(left_ventral_clean)}")
+    print(f"Number of voxels in mask: {n_vox_left}")
     print(f"Total volume: {left_volume_mm3} mm³")
     print(f"\n{roi}: Right hemisphere")
     print(f"Mask created with shape: {right_ventral_clean.shape}")
-    print(f"Number of voxels in mask: {np.sum(right_ventral_clean)}")
+    print(f"Number of voxels in mask: {n_vox_right}")
     print(f"Total volume: {right_volume_mm3} mm³")
+
 
 
     # -------------------------------
@@ -334,11 +458,11 @@ for roi in rois:
 
     # convert to nifti
     left_ventral_img = nib.Nifti1Image(
-        left_ventral_clean.astype(np.uint8),
+        left_ventral_clean.astype(np.int16),
         affine=ped_img.affine
     )
     right_ventral_img = nib.Nifti1Image(
-        right_ventral_clean.astype(np.uint8),
+        right_ventral_clean.astype(np.int16),
         affine=ped_img.affine
     )
 
@@ -351,13 +475,16 @@ for roi in rois:
     nib.save(right_ventral_img, right_ventral_path)
 
 
-    # -------------------------------
+    """     # -------------------------------
     # % === Visualization ===
     # -------------------------------
     # Define single coordinates for each view
-    z_coord = -12  # One axial slice
-    y_coord = -57  # One coronal slice (middle of your range)
-    x_coord = -45  # One sagittal slice (middle of your range)
+    if roi in roi_dict.keys():
+        x_coord, y_coord, z_coord = roi_coords[roi]
+    else:
+        z_coord = -12  # One axial slice
+        y_coord = -57  # One coronal slice (middle of your range)
+        x_coord = -45  # One sagittal slice (middle of your range)
 
     green_cmap = colors.ListedColormap(['springgreen'])
     blue_cmap = colors.ListedColormap(['dodgerblue'])
@@ -382,18 +509,18 @@ for roi in rois:
         colorbar=False,
         cmap=blue_cmap,
     )
-    plotting.show()
+    plotting.show() """
 
 
     # -------------------------------
     # % === save the figure ===
     # -------------------------------
-    roi_path = FIG_DIR / 'roi'
+    """     roi_path = FIG_DIR / 'roi'
     roi_path.mkdir(exist_ok=True, parents=True)
 
     # ventral
     display_ventral.savefig(f"{roi_path}/{roi}_pediatric_mask.png", dpi=300)
-    print(f"\nSuccessful: Figure of the {roi} mask is saved ")
+    print(f"\nSuccessful: Figure of the {roi} mask is saved ") """
     #  -------------------------------
 
 

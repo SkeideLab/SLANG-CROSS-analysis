@@ -33,15 +33,13 @@ TMPL_DIR     = ANALY_DIR / 'templates'
 MODEL          = 'glm'
 METHOD         = 'parametric' # 'parametric' 'non-parametric'
 SPACE          = 'MNIPediatricAsym_cohort-4_res-2'
-CONTRASTS      = 'images_pseudo'
+CONTRASTS      = 'audios_pseudo'
 GRADES         = ['1', '2', '4'] # 1, 2, 4
 FWHM_SMOOTHING = 9.0 # 6.0, 9.0, 12.0
 CORRECTION     = 'fpr' # fdr, fpr, rft
 P_CORRECTION   = 0.001 # 0.001, 0.05
-CLUSTER_SIZE   = 50
-RADIUS         = 6
-MNI_VWFA       = [-45, -57, -12]
-MASK_TYPE      = 'ventral' # ventral, VWFA, fusiform
+CLUSTER_SIZE   = 25
+MASK_TYPE      = 'MTG' # ventral, VWFA, A1, IFG, MTG, STG
 EXC_SUBJECTS   = ['108', '111', '113', '116', '118', '120', '121', '122', '124', '125', '126', '128', '201', '205', '206', '208', '220', '225', '226', '227', '405', '406', '408', '409', '410', '421', '422', '423', '424', '427', '430', '434']
 # Retrieve the T1-weighted template for cohort 4 (7.5-13.5yrs) at 2mm resolution
 TEMPLATE       =  tflow.get(
@@ -64,39 +62,43 @@ TEMPLATE       =  tflow.get(
 # === Compute total volume (mm3) ===
 results = []
 
-
-
-# Ventral: load masks
-if MASK_TYPE == 'ventral':
-    left_mask_path = TMPL_DIR / 'mask' / 'left_ventral_pediatric_MNI.nii.gz'
-    right_mask_path = TMPL_DIR / 'mask' / 'right_ventral_pediatric_MNI.nii.gz'
-elif MASK_TYPE == 'VWFA':
-    left_mask_path = TMPL_DIR / 'mask' / 'left_VWFA_pediatric_MNI.nii.gz'
-    right_mask_path = TMPL_DIR / 'mask' / 'right_VWFA_pediatric_MNI.nii.gz'
-left_mask_img = nib.load(left_mask_path)
-right_mask_img = nib.load(right_mask_path)
-left_mask = left_mask_img.get_fdata().astype(np.uint8)
-right_mask = right_mask_img.get_fdata().astype(np.uint8)
-
-
-
 # VWFA: load masks
 left_vwfa_mask_path  = TMPL_DIR / 'mask' / 'left_VWFA_pediatric_MNI.nii.gz'
 right_vwfa_mask_path = TMPL_DIR / 'mask' / 'right_VWFA_pediatric_MNI.nii.gz'
 
-left_vwfa_mask_img  = nib.load(left_mask_path)
-right_vwfa_mask_img = nib.load(right_mask_path)
+left_vwfa_mask_img  = nib.load(left_vwfa_mask_path)
+right_vwfa_mask_img = nib.load(right_vwfa_mask_path)
 
-left_vwfa_mask  = left_vwfa_mask_img.get_fdata().astype(np.uint8)
-right_vwfa_mask = right_vwfa_mask_img.get_fdata().astype(np.uint8)
+left_vwfa_mask  = left_vwfa_mask_img.get_fdata().astype(np.int16)
+right_vwfa_mask = right_vwfa_mask_img.get_fdata().astype(np.int16)
+
+# load the target mask
+left_mask_path  = TMPL_DIR / 'mask' / f'left_{MASK_TYPE}_pediatric_MNI.nii.gz'
+right_mask_path = TMPL_DIR / 'mask' / f'right_{MASK_TYPE}_pediatric_MNI.nii.gz'
+left_mask_img   = nib.load(left_mask_path)
+right_mask_img  = nib.load(right_mask_path)
+left_mask       = left_mask_img.get_fdata().astype(np.int16)
+right_mask      = right_mask_img.get_fdata().astype(np.int16)
 
 
 # Get the voxels info
 voxel_sizes      = left_mask_img.header.get_zooms()  # should be (2.0, 2.0, 2.0)
 voxel_volume     = voxel_sizes[0] * voxel_sizes[1] * voxel_sizes[2]
-left_volume_mm3  = voxel_volume * np.sum(left_mask)
-right_volume_mm3 = voxel_volume * np.sum(right_mask)
+# detect whether mask is binary
+if np.array_equal(np.unique(left_mask), [0, 1]):
+    # binary mask
+    n_vox_left  = np.sum(left_mask)
+    n_vox_right = np.sum(right_mask)
+else:
+    # label mask
+    n_vox_left  = np.sum(left_mask > 0)
+    n_vox_right = np.sum(right_mask > 0)
 
+left_volume_mm3  = voxel_volume * n_vox_left
+right_volume_mm3 = voxel_volume * n_vox_right
+
+# Specify the cluster size based on the number of voxles
+# CLUSTER_SIZE = int(n_vox_left * 0.01)
 
 for GRADE in GRADES:
 
@@ -123,19 +125,28 @@ for GRADE in GRADES:
         # beta-values within the ventral mask
         b_left  = b_data[left_mask.astype(bool)]
         b_right = b_data[right_mask.astype(bool)]
+
         # mean
         mean_b_left  = np.nanmean(b_left)
         mean_b_right = np.nanmean(b_right)
 
-        # beta-values within the vwfa mask
-        b_left_vwfa  = b_data[left_vwfa_mask.astype(bool)]
-        b_right_vwfa = b_data[right_vwfa_mask.astype(bool)]
-        # mean
-        mean_b_left_vwfa  = np.nanmean(b_left_vwfa)
-        mean_b_right_vwfa = np.nanmean(b_right_vwfa)
         # peak beta
-        max_b_left_vwfa   = np.nanmax(b_left_vwfa)
-        max_b_right_vwfa  = np.nanmax(b_right_vwfa)
+        max_b_left   = np.nanmax(b_left)
+        max_b_right  = np.nanmax(b_right)
+
+        if MASK_TYPE == 'ventral':
+            # beta-values within the vwfa mask
+            b_left_vwfa  = b_data[left_vwfa_mask.astype(bool)]
+            b_right_vwfa = b_data[right_vwfa_mask.astype(bool)]
+
+            # mean
+            mean_b_left  = np.nanmean(b_left_vwfa)
+            mean_b_right = np.nanmean(b_right_vwfa)
+            
+            # peak beta
+            max_b_left   = np.nanmax(b_left_vwfa)
+            max_b_right  = np.nanmax(b_right_vwfa)
+
 
         # apply p-value threshold
         z_map_thr, threshold = threshold_stats_img(
@@ -148,8 +159,8 @@ for GRADE in GRADES:
         z_thr_data = z_map_thr.get_fdata()
 
         # Only keep voxels that are in the mask
-        left_significant_mask  = (z_thr_data != 0) & left_mask
-        right_significant_mask = (z_thr_data != 0) & right_mask
+        left_significant_mask  = (z_thr_data != 0) & (left_mask > 0)
+        right_significant_mask = (z_thr_data != 0) & (right_mask > 0)
 
         # count the significant voxels within the ventral mask
         n_left_sig  = int(left_significant_mask.sum())
@@ -175,10 +186,8 @@ for GRADE in GRADES:
             "perc_sig_right": perc_sig_right,
             "mean_b_left": mean_b_left,
             "mean_b_right": mean_b_right,
-            "mean_b_left_vwfa": mean_b_left_vwfa,
-            "mean_b_right_vwfa": mean_b_right_vwfa,
-            "max_b_left_vwfa": max_b_left_vwfa,
-            "max_b_right_vwfa": max_b_right_vwfa
+            "max_b_left": max_b_left,
+            "max_b_right": max_b_right
         })
 
         print(f"Successful: {sub.name}")
@@ -211,20 +220,20 @@ df_vol = pd.melt(
     value_vars=["sig_left_volume", "sig_right_volume"],
     var_name="hemisphere",
     value_name="total_volume")
-# mean in the VWFA
+# mean 
 df_mean = pd.melt(
     df,
     id_vars=["subject", "grade"],
-    value_vars=["mean_b_left_vwfa", "mean_b_right_vwfa"],
+    value_vars=["mean_b_left", "mean_b_right"],
     var_name="hemisphere",
-    value_name="mean_b_vwfa")
-# max value in the VWFA
+    value_name="mean_b")
+# max value 
 df_max = pd.melt(
     df,
     id_vars=["subject", "grade"],
-    value_vars=["max_b_left_vwfa", "max_b_right_vwfa"],
+    value_vars=["max_b_left", "max_b_right"],
     var_name="hemisphere",
-    value_name="max_b_vwfa")
+    value_name="max_b")
 
 # Make hemisphere labels clean
 df_vol["hemisphere"] = df_vol["hemisphere"].replace({
@@ -232,12 +241,12 @@ df_vol["hemisphere"] = df_vol["hemisphere"].replace({
     "sig_right_volume": "right"
 })
 df_mean["hemisphere"] = df_mean["hemisphere"].replace({
-    "mean_b_left_vwfa": "left",
-    "mean_b_right_vwfa": "right"
+    "mean_b_left": "left",
+    "mean_b_right": "right"
 })
 df_max["hemisphere"] = df_max["hemisphere"].replace({
-    "max_b_left_vwfa": "left",
-    "max_b_right_vwfa": "right"
+    "max_b_left": "left",
+    "max_b_right": "right"
 })
 
 # converge all the dataframe
@@ -247,13 +256,39 @@ df_long = df_long.merge(df_max,on=["subject", "grade", "hemisphere"])
 
 
 # ======== Statistics & Visualization ========
-dependents = ["total_volume", "mean_b_vwfa", "max_b_vwfa"]
+dependents = ["total_volume", "mean_b", "max_b"]
 for dependent in dependents:
 
-    means = df_long.groupby(["grade", "hemisphere"])[dependent].mean().unstack()
+    # ----- remove outliers within each group (grade × hemisphere) -----
+    def remove_outliers(group):
+        q1 = group[dependent].quantile(0.25)
+        q3 = group[dependent].quantile(0.75)
+        iqr = q3 - q1
+        lower = q1 - 1.5 * iqr
+        upper = q3 + 1.5 * iqr
+        return group[(group[dependent] >= lower) & (group[dependent] <= upper)]
 
-    # Compute standard errors
-    ses = df_long.groupby(["grade", "hemisphere"])[dependent].sem().unstack()
+    df_no_out = (
+        df_long
+        .groupby(["grade", "hemisphere"], group_keys=False)
+        .apply(remove_outliers)
+        .reset_index(drop=True)
+    )
+
+    # ----- means without outliers -----
+    means = df_no_out.groupby(["grade", "hemisphere"])[dependent].mean().unstack()
+
+    # ----- SEM without outliers -----
+    ses = df_no_out.groupby(["grade", "hemisphere"])[dependent].sem().unstack()
+
+    # percentage of the mean volume 
+    perc = means.copy()
+    perc["left"]  = (perc["left"] / left_volume_mm3) *100
+    perc["right"] = (perc["right"] / right_volume_mm3) *100
+    perc = perc.round(2)
+
+    # Compute medians
+    medians = df_long.groupby(["grade", "hemisphere"])[dependent].median().unstack()
 
     print("=========================================")
     print(f"\nDependent variable: {dependent}\n")
@@ -261,6 +296,10 @@ for dependent in dependents:
     print(means)
     print("standard error of the mean")
     print(ses)
+    print("Percentage of the mean within the mask")
+    print(perc)
+    print("median")
+    print(medians)
     print("=========================================")
 
     # parametric assumption satisfied?
@@ -471,10 +510,17 @@ for dependent in dependents:
 
         # ---- Clean up the figure ----
         if dependent == "total_volume":
-            ax.set_ylim(0,25000)
-        elif dependent == "mean_b_vwfa":
+            if MASK_TYPE in ["A1", "STG"]:
+                ax.set_ylim(0,11000)
+            elif MASK_TYPE == "IFG":
+                ax.set_ylim(0,7000)
+            elif MASK_TYPE == "MTG":
+                ax.set_ylim(0,7000)
+            else:
+                ax.set_ylim(0,25000)
+        elif dependent == "mean_b":
             ax.set_ylim(-1,1)
-        elif dependent == "max_b_vwfa":
+        elif dependent == "max_b":
             ax.set_ylim(0,7)
         
         ax.tick_params(axis="both", labelsize=15)

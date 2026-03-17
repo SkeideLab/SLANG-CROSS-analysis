@@ -29,6 +29,7 @@ from nilearn.masking import compute_multi_epi_mask
 from matplotlib import colors
 from nilearn.datasets import fetch_atlas_harvard_oxford
 from scipy.ndimage import distance_transform_edt
+from collections import Counter
 
 # %%
 # ===  FIXED: Parameters ===
@@ -43,13 +44,13 @@ MASK_DIR     = TEMP_DIR / 'mask'
 # === Parameters ===
 MODEL          = 'glm'
 SPACE          = 'MNIPediatricAsym_cohort-4_res-2'
-CONTRASTS      = 'images_pseudo'
-MASK           = 'ventral' # none, ventral, fusiform, WVFA
-GRADE          = '2' # 1, 2, 4 or all
+CONTRASTS      = 'images_words'
+MASK           = 'none' # none, ventral, WVFA, MTG, STG, IFG, STG-MTG, AG-SMG
+GRADE          = '1' # 1, 2, 4 or all
 FWHM_SMOOTHING = 9.0 # 6.0, 9.0, 12.0
-CORRECTION     = 'fdr' # fdr, fpr, bonferoni 
-P_CORRECTION   = 0.05 # 0.001, 0.05
-CLUSTER_SIZE   = 100
+CORRECTION     = 'fpr' # fdr, fpr, bonferoni 
+P_CORRECTION   = 0.001 # 0.001, 0.05
+CLUSTER_SIZE   = 50
 EXC_SUBJECTS   = ['108', '111', '113', '116', '118', '120', '121', '122', '124', '125', '126', '128', '201', '205', '206', '208', '220', '225', '226', '227', '405', '406', '408', '409', '410', '421', '422', '423', '424', '427', '430', '434']
 # Retrieve the T1-weighted template for cohort 4 (7.5-13.5yrs) at 2mm resolution
 TEMPLATE       =  tflow.get(
@@ -108,7 +109,11 @@ age_lists = []
 for sub in subject_names:
     age = sex_df.loc[sex_df['participant_id'] == sub, 'age_years'].values[0]
     age_lists.append(age)
-
+age_counts = Counter(age_lists)
+age_mean = np.mean(age_lists)
+age_sd   = np.std(age_lists, ddof=1)
+print(age_mean)
+print(age_sd)
 
 
 # model design
@@ -118,11 +123,11 @@ design_matrix = pd.DataFrame({
     # "age": age_lists,
 })
 # brain-behavior (one-sided)
-design_matrix_acc = pd.DataFrame({
+""" design_matrix_acc = pd.DataFrame({
     "intercept": [1] * len(beta_paths),
     "accuracy": acc_lists,
     "age": age_lists
-})
+}) """
 
 
 if GRADE == 'all':
@@ -195,10 +200,10 @@ second_level_model = second_level_model.fit(
     beta_paths,
     design_matrix=design_matrix,
 )
-second_level_model_acc = second_level_model_acc.fit(
+""" second_level_model_acc = second_level_model_acc.fit(
     beta_paths,
     design_matrix=design_matrix_acc,
-)
+) """
 if GRADE == 'all':
     second_level_model_twosample = second_level_model_twosample.fit(
         beta_paths,
@@ -218,42 +223,73 @@ if GRADE == 'all':
     )
 
 
-# one-sample test
-   
+# one-sample test  
 z_map = second_level_model.compute_contrast(
     second_level_contrast="intercept",
     output_type="z_score",
 )
 # brain-behavior correlation
-z_map_acc = second_level_model_acc.compute_contrast(
+""" z_map_acc = second_level_model_acc.compute_contrast(
     second_level_contrast="accuracy",
     output_type="z_score",
-)
+) """
 
-if MASK == 'ventral':
-    left_mask_fn  = TEMP_DIR / 'mask' / 'left_ventral_pediatric_MNI.nii.gz'
-    right_mask_fn = TEMP_DIR / 'mask' / 'right_ventral_pediatric_MNI.nii.gz'
+if MASK == 'none':
+    brain_mask_fn  = MASK_DIR / 'brain_pediatric_MNI.nii.gz'
+    brain_mask_img = nib.load(brain_mask_fn)
+    # Combine masks (union)
+    brain_mask_data = (
+            (brain_mask_img.get_fdata() > 0) 
+        ).astype(np.uint8)
+    
+    brain_mask_img = nib.Nifti1Image(
+            brain_mask_data,
+            brain_mask_img.affine
+        )
+    z_map = image.math_img(
+            "stat * mask",
+            stat=z_map,
+            mask=brain_mask_img
+        )
+
+else:
+    left_mask_fn  = MASK_DIR / f'left_{MASK}_pediatric_MNI.nii.gz'
+    right_mask_fn = MASK_DIR / f'right_{MASK}_pediatric_MNI.nii.gz'
+
     left_mask_img = nib.load(left_mask_fn)
     right_mask_img = nib.load(right_mask_fn)
+
     # Combine masks (union)
     ventral_mask_data = (
-            (left_mask_img.get_fdata() == 1) |
-            (right_mask_img.get_fdata() == 1)
+            (left_mask_img.get_fdata() > 0) |
+            (right_mask_img.get_fdata() > 0)
         ).astype(np.uint8)
+        
     ventral_mask_img = nib.Nifti1Image(
             ventral_mask_data,
             left_mask_img.affine
         )
+        
     z_map = image.math_img(
             "stat * mask",
             stat=z_map,
             mask=ventral_mask_img
         )
-    z_map_acc = image.math_img(
-            "stat * mask",
-            stat=z_map_acc,
-            mask=ventral_mask_img
-        )
+
+
+
+# save the z-map before applying threshold
+path        = OUT_DIR / MODEL / SPACE / CONTRASTS / MASK
+path.mkdir(parents=True, exist_ok=True)
+file_name   = f"GRADE-{GRADE}_FWHM-{int(FWHM_SMOOTHING)}_{MASK}_z-map.nii.gz"
+output_path =  path / file_name
+z_map.to_filename(output_path)
+
+""" z_map_acc = image.math_img(
+        "stat * mask",
+        stat=z_map_acc,
+        mask=ventral_mask_img
+    ) """
     
 thresholded_map, threshold = threshold_stats_img(
     z_map,
@@ -263,14 +299,14 @@ thresholded_map, threshold = threshold_stats_img(
     height_control=CORRECTION,
 )
 
-thresholded_map_acc, threshold_acc = threshold_stats_img(
+""" thresholded_map_acc, threshold_acc = threshold_stats_img(
     z_map_acc,
     two_sided=True,
     alpha=P_CORRECTION,
     # cluster_threshold=CLUSTER_SIZE,
     cluster_threshold=0,
     height_control=CORRECTION,
-)
+) """
 
 
 if GRADE == 'all':
@@ -329,7 +365,7 @@ if GRADE == 'all':
 
 
 # save the z-map
-path = OUT_DIR / MODEL / SPACE / CONTRASTS
+path = OUT_DIR / MODEL / SPACE / CONTRASTS / MASK
 path.mkdir(parents=True, exist_ok=True)
 
 if GRADE == 'all':
@@ -354,9 +390,9 @@ if GRADE == 'all':
     thresholded_map_twosample.to_filename(output_path)
 
 # brain-behavior 
-file_name   = f"GRADE-{GRADE}_FWHM-{int(FWHM_SMOOTHING)}_p<{P_CORRECTION}_cls>{CLUSTER_SIZE}_z-map_acc.nii.gz"
+""" file_name   = f"GRADE-{GRADE}_FWHM-{int(FWHM_SMOOTHING)}_p<{P_CORRECTION}_cls>{CLUSTER_SIZE}_z-map_acc.nii.gz"
 output_path = path / file_name
-thresholded_map_acc.to_filename(output_path)
+thresholded_map_acc.to_filename(output_path) """
 
 # one-sample test 
 file_name   = f"GRADE-{GRADE}_FWHM-{int(FWHM_SMOOTHING)}_p<{P_CORRECTION}_cls>{CLUSTER_SIZE}_z-map.nii.gz"
@@ -370,12 +406,13 @@ p_val = P_CORRECTION
 p001_unc = norm.isf(p_val)
 
 # Z-coordinates you want to visualize
-if 'images' in CONTRASTS and 'audios' in CONTRASTS:
-    z_coords = np.arange(0, 20, 2)
-elif 'images' in CONTRASTS:
-    z_coords = np.arange(-16, -7, 1)  # from -16 to -5 inclusive
-elif 'audios' in CONTRASTS:
-    z_coords = np.arange(-5, 10, 2) # from -5 to 5
+if 'ventral' in MASK:
+    z_coords = np.arange(-16, -7, 1)  # from -16 to -6 inclusive
+elif MASK in ['STG', 'AG-SMG']:
+    x_coords = np.arange(-68, -56, 2) # from -5 to 5
+elif 'none' in MASK:
+    z_coords = np.arange(-16, -7, 1)  # from -16 to -6 inclusive
+
 
 # prepare the title
 if '-' in CONTRASTS:
@@ -384,7 +421,7 @@ else:
     contrast = CONTRASTS
 
 # create output dir
-dir = f"{FIG_DIR}/{MODEL}"
+dir = f"{FIG_DIR}/{MODEL}/{MASK}"
 os.makedirs(dir, exist_ok=True)
 
 
@@ -392,14 +429,24 @@ os.makedirs(dir, exist_ok=True)
 # compute threshold for z-value
 
 # configure the figure
-plotting_config = {
-    "display_mode": "z",
-    "cut_coords": z_coords,
-    "draw_cross": False,
-    "vmax": 5,
-    "vmin": 0,
-    "cmap": "hot",
-}
+if MASK in ['STG', 'AG-SMG']:
+    plotting_config = {
+        "display_mode": "x",
+        "cut_coords": x_coords,
+        "draw_cross": False,
+        "vmax": 5,
+        "vmin": 0,
+        "cmap": "hot",
+    }
+else:
+    plotting_config = {
+        "display_mode": "z",
+        "cut_coords": z_coords,
+        "draw_cross": False,
+        "vmax": 5,
+        "vmin": 0,
+        "cmap": "hot",
+    }
 
 # plot the uncorrrected p-value figure 
 """     display_unc = plotting.plot_stat_map(
@@ -416,10 +463,15 @@ display_unc.savefig(f"{dir}/Grade_{GRADE}_z-maps_{CONTRASTS}_FWHM{int(FWHM_SMOOT
 thresholded_map = image.math_img(
     "img * (img > 0)",
     img=thresholded_map
-) 
+)
+if  CORRECTION == 'fdr':
+    title=f"Grade-{GRADE} {contrast} (cluster-thr > {CLUSTER_SIZE}, pFDR < {P_CORRECTION})"
+elif CORRECTION == 'fpr':
+    title=f"Grade-{GRADE} {contrast} (cluster-thr > {CLUSTER_SIZE}, p-unc < {P_CORRECTION})"
+
 display_FPR = plotting.plot_stat_map(
     thresholded_map,
-    title=f"Grade-{GRADE} {contrast} (cluster-thr > {CLUSTER_SIZE}, p < {P_CORRECTION})",
+    title=title,
     bg_img=TEMPLATE,
     threshold=threshold,
     **plotting_config,
@@ -542,7 +594,7 @@ if GRADE == 'all':
 # glass brain:: one-sample test
 display = plotting.plot_glass_brain(
     thresholded_map,
-    title=f"Grade-{GRADE} {contrast} (cluster-thr > {CLUSTER_SIZE}, pFDR < {P_CORRECTION})",
+    title=title,
     threshold=threshold,
     colorbar=True,
     display_mode='lyrz',  # show left, sagittal, coronal, axial views
@@ -561,7 +613,7 @@ plotting.show()
 
 
 # glass brain:: brain-behavior
-display = plotting.plot_glass_brain(
+""" display = plotting.plot_glass_brain(
     thresholded_map_acc,
     title=f"Grade-{GRADE} {contrast} (cluster-thr > 0, pFDR < {P_CORRECTION})",
     threshold=threshold_acc,
@@ -578,7 +630,7 @@ display.add_contours(
     linewidths=0.5
 )
 display.savefig(f"{dir}/Grade_{GRADE}_z-maps_{CONTRASTS}_FWHM{int(FWHM_SMOOTHING)}_p-val<{P_CORRECTION}_glass_acc.png", dpi=300)
-plotting.show()
+plotting.show() """
 
 
 if GRADE == 'all':
@@ -735,7 +787,7 @@ plotting.show()
 
 
 # % === load the z-map === 
-path      = OUT_DIR / MODEL / SPACE / CONTRASTS
+path      = OUT_DIR / MODEL / SPACE / CONTRASTS / MASK
 file_name = f"GRADE-{tar_grade}_FWHM-{int(FWHM_SMOOTHING)}_p<{P_CORRECTION}_cls>{CLUSTER_SIZE}_z-map.nii.gz"
 filepath  = path / file_name
 data_img  = nib.load(filepath)
