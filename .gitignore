@@ -5,6 +5,5 @@ scripts/__pycache__/
 templates/
 containers/
 outputs/
-figures/
-scripts/trash/
+scripts/trashes/
 

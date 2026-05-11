@@ -1,11 +1,11 @@
 # %% [markdown]
-# ## fMRI Group-level Figure creation (2nd-level)
+# ## fMRI Group-level Brain Figure creation (2nd-level)
 #
 # **Pipeline Overview**
 # 1. === STEP 1 ===: Install packages
 # 2. === STEP 2 ===: Set parameters
-# 3. === STEP 3 ===: Visualize significant regions
-# 5. === STEP 4 ===: Save it as pdf
+# 3. === STEP 3 ===: Visualize significant regions (word)
+# 4. === STEP 4 ===: Visualize significant regions (pseudoword)
 
 
 
@@ -228,7 +228,6 @@ axes = [
 ]
 for ax, v in zip(axes, views):
     # plot ROIs with contours on surface
-    # 1. Fill ROI regions
 
     plotting.plot_surf_contours(
         surf_mesh = infl_mesh,
@@ -261,7 +260,7 @@ plt.show()
 
 
 # %%
-# 3. === STEP 3 ===: Visualize all regions
+# 3. === STEP 3 ===: Visualize all regions (words)
 # ------------------------------------------------
 
 # fsaverage surface
@@ -334,26 +333,25 @@ axes = [
 for ax, v in zip(axes, views):
     # plot ROIs with contours on surface
 
-    # 1. Fill ROI regions
+    # Fill ROI regions
     plotting.plot_surf_roi(
         surf_mesh   = infl_mesh,
         roi_map     = roi_map_reindexed,
         hemi        = HEMI,
         view        = v,
-        # bg_map      = sulc,
         cmap        = cmap,
         axes        = ax,
         colorbar    = False,
         darkness    = 1
     )
-    # 2. Draw ONLY edge lines on top
+    #　Draw ONLY edge lines on top
     plotting.plot_surf_contours(
         surf_mesh = infl_mesh,
         roi_map   = roi_map_reindexed,
         hemi      = HEMI,
         view      = v,
         levels    = levels,
-        colors    = ["black"] * len(levels),   # <- edge color
+        colors    = ["black"] * len(levels), 
         linewidths= 0.8,
         axes      = ax
     )
@@ -379,7 +377,7 @@ plt.show()
 
 
 # %%
-# 3. === STEP 3 ===: Visualize all regions
+# 4. === STEP 4 ===: Visualize significant regions (pseudoword)
 # ------------------------------------------------
 
 # fsaverage surface
@@ -452,26 +450,25 @@ axes = [
 for ax, v in zip(axes, views):
     # plot ROIs with contours on surface
 
-    # 1. Fill ROI regions
+    # Fill ROI regions
     plotting.plot_surf_roi(
         surf_mesh   = infl_mesh,
         roi_map     = roi_map_reindexed,
         hemi        = HEMI,
         view        = v,
-        # bg_map      = sulc,
         cmap        = cmap,
         axes        = ax,
         colorbar    = False,
         darkness    = 1
     )
-    # 2. Draw ONLY edge lines on top
+    # Draw ONLY edge lines on top
     plotting.plot_surf_contours(
         surf_mesh = infl_mesh,
         roi_map   = roi_map_reindexed,
         hemi      = HEMI,
         view      = v,
         levels    = levels,
-        colors    = ["black"] * len(levels),   # <- edge color
+        colors    = ["black"] * len(levels),  
         linewidths= 0.8,
         axes      = ax
     )
