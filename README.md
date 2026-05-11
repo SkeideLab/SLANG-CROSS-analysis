@@ -1,5 +1,5 @@
 # SLANG-CROSS
-Analysis pipeline for the SLANG-CROSS research project.
+Code repository for the analysis of the SLANG-CROSS research project.
 
 ---
 
