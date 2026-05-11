@@ -4,8 +4,9 @@
 # **Pipeline Overview**
 # 1. === STEP 1 ===: Install packages
 # 2. === STEP 2 ===: Set parameters
-# 3. === STEP 3 ===: Visualize significant regions (word)
-# 4. === STEP 4 ===: Visualize significant regions (pseudoword)
+# 3. === STEP 3 ===: Visualize all regions
+# 4. === STEP 4 ===: Visualize significant regions (word)
+# 5. === STEP 5 ===: Visualize significant regions (pseudoword)
 
 
 
@@ -260,7 +261,7 @@ plt.show()
 
 
 # %%
-# 3. === STEP 3 ===: Visualize all regions (words)
+# 4. === STEP 4 ===: Visualize significant regions (word)
 # ------------------------------------------------
 
 # fsaverage surface
@@ -377,7 +378,7 @@ plt.show()
 
 
 # %%
-# 4. === STEP 4 ===: Visualize significant regions (pseudoword)
+# 5. === STEP 5 ===: Visualize significant regions (pseudoword)
 # ------------------------------------------------
 
 # fsaverage surface

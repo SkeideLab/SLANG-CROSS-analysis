@@ -59,7 +59,7 @@ atlas_labels   = HO_ATLAS_MNI6.lut
 
 
 # %%
-# 4. === STEP 4 ===: Compute language RDM for each subject
+# 3. === STEP 3 ===: Compute language RDM for each subject
 # -----------------------------------------------
 # ROIs
 roi_names     = [label for label in atlas_labels['name'] if label != 'Background']
@@ -172,7 +172,7 @@ for subject in subjects:
     plt.show()
 
     # %
-    # 6. === STEP 6 ===: Compute each RDM metrics
+    # Compute each RDM metrics
     results = {}
     for region, corr in corr_matrices.items():
         n_runs            = int(corr.shape[0] / 6)

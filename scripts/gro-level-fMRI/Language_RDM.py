@@ -352,7 +352,7 @@ for subject in subjects:
             plt.show()
 
     # %
-    # 6. === STEP 6 ===: Compute each RDM metrics
+    # Compute each RDM metrics
     results = {}
     for region, corr in corr_matrices.items():
         n_runs            = int(corr.shape[0] / 6)

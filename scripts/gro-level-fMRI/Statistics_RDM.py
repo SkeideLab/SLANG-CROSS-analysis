@@ -7,8 +7,8 @@
 # 3. === STEP 3 ===: read RDM csv file and remove outliers
 # 4. === STEP 4 ===: Distirbution of RDM metrcis 
 # 5. === STEP 5 ===: Distirbution of RDM metrcis by grade
-# 5. === STEP 6 ===: Statistics: One-sample t-tetst
-# 5. === STEP 7 ===: Statistics: Linear regression
+# 6. === STEP 6 ===: Statistics: One-sample t-tetst
+# 7. === STEP 7 ===: Statistics: Linear regression
 
 
 
@@ -88,7 +88,6 @@ roi_color_map  = {
                     "Temporal Fusiform Cortex, posterior division": "green",
                     "Temporal Occipital Fusiform Cortex": "limegreen",
                     }
-# xlabels         = ['IFG-pt', 'IFG-po', 'SMG-a', 'SMG-p', 'Angular', 'STG-a', 'STG-p', 'TFC-p', 'TOFC']
 roi_labels     = {
                     "Inferior Frontal Gyrus, pars triangularis": "trIFG",
                     "Inferior Frontal Gyrus, pars opercularis": "opIFG",
