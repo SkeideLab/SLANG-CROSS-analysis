@@ -1,5 +1,5 @@
 # SLANG-CROSS
-Statistical analysis pipeline for the SLANG-CROSS research project.
+Analysis pipeline for the SLANG-CROSS research project.
 
 ---
 
