@@ -1,6 +1,6 @@
 {
     "bids_dir": "/work_beegfs/suknp132/SLANG-CROSS-conversion",
-    "conda_env": "/viper/ptmp/kazma/miniforge3/etc/profile.d/conda.sh",
-    "conda_env_name": "nilearn_glm",
+    "conda_env": "/zfshome/sw/spack/spack0.18.1/usr/opt/spack/linux-rocky8-x86_64/gcc-12.1.0/miniconda3-24.7.1-r2b27gcx7as26b47ont575ogtknkc5hz/etc/profile.d/conda.sh",
+    "conda_env_name": "fmri_glm",
     "analy_dir": "/work_beegfs/suknp132/SLANG-CROSS-analysis"
 }
