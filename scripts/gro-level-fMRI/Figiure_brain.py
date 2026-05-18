@@ -48,7 +48,7 @@ CONTRASTS      = [
                 'audios_words-audios_pseudo',
                 ]
 FWHM_SMOOTHING = 9.0 # 6.0, 9.0, 12.0
-HEMI           = 'left' 
+HEMI           = 'right' 
 EXC_SUBJECTS   = [
                 '108', '111', '113', '116', '118', '120', '121', '122', '124', '125', '126', '128', 
                 '201', '205', '206', '208', '220', '225', '226', '227', 
@@ -179,83 +179,92 @@ atlas_img      = HO_ATLAS_MNI6.maps
 atlas_labels   = HO_ATLAS_MNI6.labels
 label_to_index = {name: i for i, name in enumerate(atlas_labels)}
 
-# Get the label of ROIs
-roi_indices = []
-roi_colors  = []
-for region, color in roi_color_map.items():
-    if region in label_to_index:
-        roi_indices.append(label_to_index[region])
-        roi_colors.append(color)
-            
-roi_indices = np.array(roi_indices)
+# Keep only goldenrod regions
+target_colors = ["goldenrod", "dodgerblue", "mediumvioletred", "limegreen"]
+for target_color in target_colors:
+    filtered_roi_map = {
+        region: color
+        for region, color in roi_color_map.items()
+        if color == target_color
+    }
 
-# Transfrom volumetric HO-Atlas into urface 
-texture_left = surface.vol_to_surf(
-            atlas_img,
-            surf_mesh     = mesh,
-            inner_mesh    = white_mesh,
-            interpolation = 'nearest',
-            n_samples     = 1
+    # Get the label of ROIs
+    roi_indices = []
+    roi_colors  = []
+    for region, color in filtered_roi_map.items():
+        if region in label_to_index:
+            roi_indices.append(label_to_index[region])
+            roi_colors.append(color)
+                
+    roi_indices = np.array(roi_indices)
+
+    # Transfrom volumetric HO-Atlas into urface 
+    texture_left = surface.vol_to_surf(
+                atlas_img,
+                surf_mesh     = mesh,
+                inner_mesh    = white_mesh,
+                interpolation = 'nearest',
+                n_samples     = 1
+            )
+    roi_map_left = texture_left.copy()
+
+    # assign NaN to non ROI regions
+    roi_mask                       = np.isin(roi_map_left, roi_indices)
+    roi_map_left_masked            = roi_map_left.copy()
+    roi_map_left_masked[~roi_mask] = np.nan
+
+    # Specify view angle of the figure
+    views = ["lateral", "ventral", "medial"]
+
+
+    # convert original atlas indices to start from 0
+    index_map         = {idx: i for i, idx in enumerate(roi_indices)}
+    roi_map_reindexed = np.full_like(roi_map_left_masked, np.nan)
+    for old_idx, new_idx in index_map.items():
+        roi_map_reindexed[roi_map_left_masked == old_idx] = new_idx
+
+
+    # Build colormap
+    cmap   = ListedColormap(roi_colors)
+    levels = list(range(len(roi_colors)))
+
+    # Create one figure with two sub-panels
+    fig  = plt.figure(figsize=(7, 5))
+    axes = [
+        fig.add_subplot(1, 3, 1, projection='3d'),
+        fig.add_subplot(1, 3, 2, projection='3d'),
+        fig.add_subplot(1, 3, 3, projection='3d')
+
+    ]
+    for ax, v in zip(axes, views):
+        # plot ROIs with contours on surface
+
+        plotting.plot_surf_contours(
+            surf_mesh = infl_mesh,
+            roi_map   = roi_map_reindexed,
+            hemi      = HEMI,
+            view      = v,
+            levels    = levels,
+            colors    = roi_colors,
+            axes      = ax
         )
-roi_map_left = texture_left.copy()
 
-# assign NaN to non ROI regions
-roi_mask                       = np.isin(roi_map_left, roi_indices)
-roi_map_left_masked            = roi_map_left.copy()
-roi_map_left_masked[~roi_mask] = np.nan
+    plt.tight_layout()
 
- # Specify view angle of the figure
-views = ["lateral", "ventral", "medial"]
-
-
-# convert original atlas indices to start from 0
-index_map         = {idx: i for i, idx in enumerate(roi_indices)}
-roi_map_reindexed = np.full_like(roi_map_left_masked, np.nan)
-for old_idx, new_idx in index_map.items():
-    roi_map_reindexed[roi_map_left_masked == old_idx] = new_idx
-
-
-# Build colormap
-cmap   = ListedColormap(roi_colors)
-levels = list(range(len(roi_colors)))
-
-# Create one figure with two sub-panels
-fig  = plt.figure(figsize=(7, 5))
-axes = [
-    fig.add_subplot(1, 3, 1, projection='3d'),
-    fig.add_subplot(1, 3, 2, projection='3d'),
-    fig.add_subplot(1, 3, 3, projection='3d')
-
-]
-for ax, v in zip(axes, views):
-    # plot ROIs with contours on surface
-
-    plotting.plot_surf_contours(
-        surf_mesh = infl_mesh,
-        roi_map   = roi_map_reindexed,
-        hemi      = HEMI,
-        view      = v,
-        levels    = levels,
-        colors    = roi_colors,
-        axes      = ax
+    # save the figure
+    roi_path = FIG_DIR / 'multimodal'
+    roi_path.mkdir(exist_ok=True, parents=True)
+    path     = roi_path / f"{HEMI}_{target_color}-regions.pdf"
+    plt.savefig(
+        path,
+        format      = 'pdf',
+        dpi         = 300,
+        transparent = True,
+        bbox_inches = 'tight',
+        pad_inches  = 0.3
     )
-
-plt.tight_layout()
-
-# save the figure
-roi_path = FIG_DIR / 'multimodal'
-roi_path.mkdir(exist_ok=True, parents=True)
-path     = roi_path / f"{HEMI}_all-regions.pdf"
-plt.savefig(
-    path,
-    format      = 'pdf',
-    dpi         = 300,
-    transparent = True,
-    bbox_inches = 'tight',
-    pad_inches  = 0.3
-)
-print(f"\nSuccessful: {path} is saved ")
-plt.show()
+    print(f"\nSuccessful: {path} is saved ")
+    plt.show()
 
 
 

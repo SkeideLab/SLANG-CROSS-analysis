@@ -142,7 +142,7 @@ for cond in conditions:
 # 4. === STEP 4 ===: Distirbution of RDM metrcis 
 # -----------------------------------------------
  # --- figure ---
-fig, axes = plt.subplots(1, 3, figsize=(20, 6))
+fig, axes = plt.subplots(1, 3, figsize=(12, 5))
 axes = axes.flatten() 
  # --- labels ---
 fig_path  = FIG_DIR / 'multimodal'
@@ -161,7 +161,7 @@ for i, cond in enumerate(conditions):
                  data           = df_cond,
                  order          = order,
                  palette        = palette,
-                 point_size     = 3,
+                 point_size     = 2,
                  rain_alpha     = 0.6,
                  width_viol     = 1, 
                  width_box      = 0.3, 
@@ -175,11 +175,14 @@ for i, cond in enumerate(conditions):
     ax.set_ylim([-0.5, 1]) # Dynamic limit to fit stars
     ax.yaxis.grid(True, which='major', linestyle='-', linewidth=0.5, alpha=0.5)
     short_title = titles[i]
-    ax.set_title(short_title, fontsize=20)
-    ax.set_xticklabels(xlabels, fontsize=15, rotation=60)
+    ax.set_title(short_title, fontsize=15)
+    ax.set_xticklabels(xlabels, fontsize=14, rotation=60)
     ax.axhline(y=0, linestyle='--', linewidth=1, color='black', alpha=0.7)
-    ax.set_xlabel(" ", fontsize=15)
-    ax.set_ylabel(r"Multimodal similarity ($r$)", fontsize=15)
+    ax.set_xlabel(" ", fontsize=1)
+    if i == 0:
+        ax.set_ylabel(r"Multimodal similarity ($r$)", fontsize=14)
+    else:
+        ax.set_ylabel(None)
 plt.tight_layout()
 # --- Save ---
 fig_path.mkdir(exist_ok=True, parents=True)
@@ -200,7 +203,7 @@ plt.show()
 # 5. === STEP 5 ===: Distirbution of RDM metrcis by grade
 # -----------------------------------------------
 # --- figure ---
-fig, axes = plt.subplots(1, 3, figsize=(20, 6))
+fig, axes = plt.subplots(1, 3, figsize=(12, 5))
 axes      = axes.flatten()
 # --- key, title, fontsize ---
 fig_path  = FIG_DIR / 'multimodal'
@@ -218,10 +221,9 @@ legend_map = {
             }
 # --- function for consistent axes ---
 def style_axis(ax, title, fontsize, xlabels):
-    ax.set_title(title, fontsize=20)
-    ax.set_xlabel(" ", fontsize=fontsize)
-    ax.set_xticklabels(xlabels, fontsize=15, rotation=60)
-    ax.set_ylabel(r"Multimodal similarity ($r$)", fontsize=fontsize)
+    ax.set_title(title, fontsize=15)
+    ax.set_xlabel(None)
+    ax.set_xticklabels(xlabels, fontsize=14, rotation=60)
     ax.set_ylim(-0.2, 0.6)
     ax.tick_params(axis="both", which="major", length=3, width=1)
     ax.spines['top'].set_visible(False)
@@ -248,6 +250,11 @@ for ax, (key, title, fs) in zip(axes, configs):
         patch.set_alpha(0.8)   # decrease alpha (0–1)
 
     style_axis(ax, title, fs, xlabels)
+    if key=='word_multi':
+        ax.set_ylabel(r"Multimodal similarity ($r$)", fontsize=14)
+    else:
+        ax.set_ylabel(None)
+
 # add legend
 legend_handles = [
     Patch(facecolor=color, edgecolor='black', linewidth=1, label=grade)
@@ -258,8 +265,8 @@ fig.legend(
     loc="center right",
     title="Grade",
     bbox_to_anchor=(1, 0.9),
-    fontsize=15,
-    title_fontsize=16,
+    fontsize=12,
+    title_fontsize=12,
 )
 plt.tight_layout()
 # --- save ---
@@ -358,6 +365,22 @@ for pred in predictors:
 
         for roi, g in data.groupby("roi"):
 
+            # descriptive statistics by grade
+            grade_stats = (
+                g.groupby("grade")[cond]
+                .agg(mean="mean", sd="std")
+                .reset_index()
+            )
+
+            # columns become:
+            # mean_g1, sd_g1, mean_g2, sd_g2, ...
+            grade_dict = {}
+
+            for grade, vals in grade_stats.iterrows():
+                grade_dict[f"mean_g{grade}"] = vals["mean"]
+                grade_dict[f"sd_g{grade}"]   = vals["sd"]
+
+            # regression model
             model = smf.ols(f"Fisher ~ {pred}", data=g).fit()
 
             beta = model.params.get(pred, np.nan)
@@ -368,29 +391,23 @@ for pred in predictors:
             r2   = model.rsquared
             n    = len(g)
 
-            rows.append((
-                cond,
-                roi,
-                beta,
-                se,
-                tval,
-                df,
-                pval,
-                r2,
-                n,
-                pred
-            ))
+            # combine everything
+            row = {
+                "condition": cond,
+                "roi": roi,
+                "beta": beta,
+                "se": se,
+                "t": tval,
+                "df": df,
+                "p": pval,
+                "r2": r2,
+                "n": n,
+                "predictor": pred,
+                **grade_dict
+            }
 
-        df_lm = pd.DataFrame(
-            rows,
-            columns=[
-                "condition", "roi",
-                "beta", "se",
-                "t", "df",
-                "p", "r2",
-                "n", "predictor"
-            ]
-        )
+            rows.append(row)
+        df_lm = pd.DataFrame(rows)
 
         # --- FDR correction ---
         df_lm["p_fdr"] = np.nan
@@ -412,4 +429,4 @@ for pred in predictors:
 
 df_lm_all = pd.concat(all_results_lr, ignore_index=True)
 df_lm_all
-# %%
+

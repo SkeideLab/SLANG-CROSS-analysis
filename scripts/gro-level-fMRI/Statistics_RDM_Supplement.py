@@ -50,7 +50,7 @@ CONTRASTS      = [
                 'audios_words-audios_pseudo',
                 ]
 FWHM_SMOOTHING = 9.0 # 6.0, 9.0, 12.0
-HEMI           = 'left' 
+HEMI           = 'right' 
 EXC_SUBJECTS   = [
                 '108', '111', '113', '116', '118', '120', '121', '122', '124', '125', '126', '128', 
                 '201', '205', '206', '208', '220', '225', '226', '227', 
@@ -203,200 +203,260 @@ for cond in conditions:
 
 
 
-# %
+# %%
 # 4. === STEP 4 ===: Distirbution of RDM metrcis 
 # -----------------------------------------------
- # --- figure ---
-fig, axes = plt.subplots(3, 1, figsize=(20, 15))
-axes = axes.flatten() 
- # --- labels ---
-fig_path   = FIG_DIR / 'multimodal'
-fig_name   = f"{HEMI}_Correlations_Supplements.pdf"
-titles     = ['Word', 'Pseudoword', 'Semantic']
-xlabels    = [label for label in roi_abbrev.values()]
-order      = list(roi_color_map.keys())
-palette    = list(roi_color_map.values())   # IMPORTANT: use dict, not list
-legend_map = {
-                "Frontal lobe": "goldenrod",
-                "Parietal lobe": "dodgerblue",
-                "Temporal lobe": "mediumvioletred",
-                "Occipital lobe": "limegreen"
-            }
-# --- plot ---
-for i, cond in enumerate(conditions):
-    ax      = axes[i]
-    df_cond = df_clean_dict[cond]
-    df_cond["roi"] = pd.Categorical(
+# Keep only goldenrod ROIs
+target_colors = ["goldenrod", "dodgerblue", "mediumvioletred", "limegreen"]
+for target_color in target_colors:
+
+    # --- figure ---
+    fig, axes = plt.subplots(3, 1, figsize=(6, 8))
+    axes = axes.flatten()
+
+    roi_colors = {
+        roi: color
+        for roi, color in roi_color_map.items()
+        if color == target_color
+    }
+
+    # Keep matching abbreviations only
+    roi_abb = {
+        roi: abbrev
+        for roi, abbrev in roi_abbrev.items()
+        if roi in roi_colors
+    }
+
+    # --- labels ---
+    fig_path   = FIG_DIR / 'multimodal'
+    fig_name   = f"{HEMI}_{target_color}_Correlations_Supplements.pdf"
+    titles     = ['Word', 'Pseudoword', 'Semantic']
+    xlabels    = [label for label in roi_abb.values()]
+    order      = list(roi_colors.keys())
+    palette    = list(roi_colors.values())   # IMPORTANT: use dict, not list
+    """ legend_map = {
+                    "Frontal lobe": "goldenrod",
+                    "Parietal lobe": "dodgerblue",
+                    "Temporal lobe": "mediumvioletred",
+                    "Occipital lobe": "limegreen"
+                } """
+    # --- plot ---
+    for i, cond in enumerate(conditions):
+        ax      = axes[i]
+        df      = df_clean_dict[cond]
+        # Keep only goldenrod ROIs
+        df_cond = df[df["roi"].isin(order)].copy()
+        df_cond["roi"] = pd.Categorical(
+                                            df_cond["roi"],
+                                            categories=order,
+                                            ordered=True
+                                        )
+        df_cond = df_cond.sort_values("roi")
+
+        # --- Plotting: RainCloud ---
+        pt.RainCloud(x              = "roi", 
+                    y              = cond, 
+                    data           = df_cond,
+                    order          = order,
+                    palette        = palette,
+                    point_size     = 2,
+                    rain_alpha     = 0.6,
+                    width_viol     = 1, 
+                    width_box      = 0.3, 
+                    cloud_alpha    = 1,
+                    offset         = 0.2, 
+                    box_showfliers = False,  
+                    ax             = ax)
+        # --- Aesthetics ---
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        ax.set_ylim([-0.5, 1]) # Dynamic limit to fit stars
+        ax.tick_params(axis='y', labelsize=10)
+        ax.yaxis.grid(True, which='major', linestyle='-', linewidth=0.5, alpha=0.5)
+        ax.yaxis.set_major_locator(plt.MultipleLocator(0.2))
+        short_title = titles[i]
+        ax.set_title(short_title, fontsize=15)
+        # Show x tick labels only on the last subplot
+        if i == len(conditions) - 1:
+            ax.set_xticklabels(xlabels, fontsize=14, rotation=60)
+        else:
+            ax.set_xticklabels([])
+            ax.set_xlabel("")
+        ax.axhline(y=0, linestyle='--', linewidth=1, color='black', alpha=0.7)
+        ax.set_xlabel(" ", fontsize=7)
+        ax.set_ylabel(r"Similarity ($r$)", fontsize=12)
+    """ # add legend
+    legend_handles = [
+        Patch(facecolor=color, edgecolor='black', linewidth=1, label=lobe)
+        for lobe, color in legend_map.items()
+    ]
+    fig.legend(
+        handles=legend_handles,
+        loc="center right",
+        title=HEMI.capitalize(),
+        bbox_to_anchor=(1.03, 1),
+        fontsize=15,
+        title_fontsize=16,
+    )
+    # add panel logo
+    if HEMI == "left":
+        logo = "A"
+    elif HEMI == "right":
+        logo = "B"
+    fig.text(
+        0.01, 1.05, logo,
+        fontsize=30,
+        fontweight="bold",
+        ha="left",
+        va="top"
+    ) """
+    fig.subplots_adjust(hspace=0.5)
+    plt.tight_layout()
+    # --- Save ---
+    fig_path.mkdir(exist_ok=True, parents=True)
+    plt.savefig(
+        fname       = fig_path / fig_name,
+        format      = 'pdf',
+        dpi         = 300,
+        transparent = True,
+        bbox_inches = 'tight',
+        pad_inches  = 0.3
+    )
+    print(f"\nSuccessful: Figure is saved ")
+    plt.show()
+
+
+
+# %%
+# 5. === STEP 5 ===: Distirbution of RDM metrcis by grade
+# -----------------------------------------------
+target_colors = ["goldenrod", "dodgerblue", "mediumvioletred", "limegreen"]
+for target_color in target_colors:
+
+    # --- figure ---
+    fig, axes = plt.subplots(3, 1, figsize=(6, 8))
+    axes      = axes.flatten()
+
+    # --- key, title, fontsize ---
+    fig_path  = FIG_DIR / 'multimodal'
+    fig_name  = f"{HEMI}_{target_color}_Correlations_gradewise_supplements.pdf"
+    configs   = [
+                ("word_multi",     "Word",     15),
+                ("pseudo_multi",   "Pseudoword",   15),
+                ("semantic_multi", "Semantic", 15),
+                ]
+
+    # Keep matching abbreviations only
+    roi_colors = {
+        roi: color
+        for roi, color in roi_color_map.items()
+        if color == target_color
+    }
+    roi_abb = {
+        roi: abbrev
+        for roi, abbrev in roi_abbrev.items()
+        if roi in roi_colors
+    }
+    order      = list(roi_colors.keys())
+    xlabels    = [label for label in roi_abb.values()]
+    legend_map = {
+                    1: "darkgoldenrod",
+                    2: "darkcyan",
+                    4: "firebrick",
+                }
+    # --- function for consistent axes ---
+    def style_axis(ax, title, fontsize):
+        ax.set_title(title, fontsize=15)
+        ax.set_xlabel(" ", fontsize=fontsize)
+        ax.set_ylabel(r"Similarity ($r$)", fontsize=12)
+        ax.set_ylim(-0.2, 0.8)
+        ax.yaxis.set_major_locator(plt.MultipleLocator(0.2))
+        ax.tick_params(axis="both", which="major", length=3, width=1)
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        if ax.legend_:
+            ax.legend_.remove()
+        ax.xaxis.set_ticks_position("bottom")
+        ax.yaxis.set_ticks_position("left")
+        ax.axhline(y=0, linestyle='--', linewidth=1, color='black', alpha=0.7)
+        ax.grid(True, axis='y', color='gray', alpha=0.3)
+    # --- plot ---
+    for ax, (key, title, fs) in zip(axes, configs):
+        df      = df_clean_dict[key]
+        # Keep only goldenrod ROIs
+        df_cond = df[df["roi"].isin(order)].copy()
+        df_cond["roi"] = pd.Categorical(
                                         df_cond["roi"],
                                         categories=order,
                                         ordered=True
                                     )
-    df_cond = df_cond.sort_values("roi")
+        df_cond = df_cond.sort_values("roi")
 
-    # --- Plotting: RainCloud ---
-    pt.RainCloud(x              = "roi", 
-                 y              = cond, 
-                 data           = df_cond,
-                 order          = order,
-                 palette        = palette,
-                 point_size     = 3,
-                 rain_alpha     = 0.6,
-                 width_viol     = 1, 
-                 width_box      = 0.3, 
-                 cloud_alpha    = 1,
-                 offset         = 0.2, 
-                 box_showfliers = False,  
-                 ax             = ax)
-    # --- Aesthetics ---
-    ax.spines['top'].set_visible(False)
-    ax.spines['right'].set_visible(False)
-    ax.set_ylim([-0.5, 1]) # Dynamic limit to fit stars
-    ax.yaxis.grid(True, which='major', linestyle='-', linewidth=0.5, alpha=0.5)
-    short_title = titles[i]
-    ax.set_title(short_title, fontsize=17)
-    ax.set_xticklabels(xlabels, fontsize=9, rotation=60)
-    ax.axhline(y=0, linestyle='--', linewidth=1, color='black', alpha=0.7)
-    ax.set_xlabel(" ", fontsize=15)
-    ax.set_ylabel(r"Multimodal similarity ($r$)", fontsize=13)
-# add legend
-legend_handles = [
-    Patch(facecolor=color, edgecolor='black', linewidth=1, label=lobe)
-    for lobe, color in legend_map.items()
-]
-fig.legend(
-    handles=legend_handles,
-    loc="center right",
-    title=HEMI.capitalize(),
-    bbox_to_anchor=(1.03, 1),
-    fontsize=15,
-    title_fontsize=16,
-)
-# add panel logo
-if HEMI == "left":
-    logo = "A"
-elif HEMI == "right":
-    logo = "B"
-fig.text(
-    0.01, 1.05, logo,
-    fontsize=30,
-    fontweight="bold",
-    ha="left",
-    va="top"
-)
-fig.subplots_adjust(hspace=0.5)
-plt.tight_layout()
-# --- Save ---
-fig_path.mkdir(exist_ok=True, parents=True)
-plt.savefig(
-    fname       = fig_path / fig_name,
-    format      = 'pdf',
-    dpi         = 300,
-    transparent = True,
-    bbox_inches = 'tight',
-    pad_inches  = 0.3
-)
-print(f"\nSuccessful: Figure is saved ")
-plt.show()
+        sns.barplot(
+            data=df_cond,
+            x="roi",
+            y=key,
+            hue="grade",         
+            palette=legend_map, 
+            edgecolor="black",          
+            ax=ax
+        )
+        # adjust transparency post hoc
+        for patch in ax.patches:
+            patch.set_alpha(0.8)   # decrease alpha (0–1)
 
+        style_axis(ax, title, fs)
+        # Show x tick labels only on the last subplot
+        if key == "semantic_multi":
+            ax.set_xticklabels(xlabels, fontsize=14, rotation=60)
+        else:
+            ax.set_xticklabels([])
+            ax.set_xlabel("")
 
-
-# %
-# 5. === STEP 5 ===: Distirbution of RDM metrcis by grade
-# -----------------------------------------------
-# --- figure ---
-fig, axes = plt.subplots(3, 1, figsize=(20, 15))
-axes      = axes.flatten()
-
-# --- key, title, fontsize ---
-fig_path  = FIG_DIR / 'multimodal'
-fig_name  = f"{HEMI}_Correlations_gradewise_supplements.pdf"
-configs   = [
-             ("word_multi",     "Word",     15),
-             ("pseudo_multi",   "Pseudoword",   15),
-             ("semantic_multi", "Semantic", 15),
-            ]
-xlabels    = [label for label in roi_abbrev.values()]
-legend_map = {
-                1: "darkgoldenrod",
-                2: "darkcyan",
-                4: "firebrick",
-            }
-# --- function for consistent axes ---
-def style_axis(ax, title, fontsize, xlabels):
-    ax.set_title(title, fontsize=17)
-    ax.set_xlabel(" ", fontsize=fontsize)
-    ax.set_xticklabels(xlabels, fontsize=9, rotation=60)
-    ax.set_ylabel(r"Multimodal similarity ($r$)", fontsize=fontsize)
-    ax.set_ylim(-0.2, 0.6)
-    ax.tick_params(axis="both", which="major", length=3, width=1)
-    ax.spines['top'].set_visible(False)
-    ax.spines['right'].set_visible(False)
-    if ax.legend_:
-        ax.legend_.remove()
-    ax.xaxis.set_ticks_position("bottom")
-    ax.yaxis.set_ticks_position("left")
-    ax.axhline(y=0, linestyle='--', linewidth=1, color='black', alpha=0.7)
-    ax.grid(True, axis='y', color='gray', alpha=0.3)
-# --- plot ---
-for ax, (key, title, fs) in zip(axes, configs):
-    sns.barplot(
-        data=df_clean_dict[key],
-        x="roi",
-        y=key,
-        hue="grade",         
-        palette=legend_map, 
-        edgecolor="black",          
-        ax=ax
+    # add legend
+    legend_handles = [
+        Patch(facecolor=color, edgecolor='black', linewidth=1, label=grade)
+        for grade, color in legend_map.items()
+    ]
+    fig.legend(
+        handles=legend_handles,
+        loc="center right",
+        title="Grade",
+        bbox_to_anchor=(1, 0.98),
+        fontsize=12,
+        title_fontsize=12,
     )
-    # adjust transparency post hoc
-    for patch in ax.patches:
-        patch.set_alpha(0.8)   # decrease alpha (0–1)
-
-    style_axis(ax, title, fs, xlabels)
-# add legend
-legend_handles = [
-    Patch(facecolor=color, edgecolor='black', linewidth=1, label=grade)
-    for grade, color in legend_map.items()
-]
-fig.legend(
-    handles=legend_handles,
-    loc="center right",
-    title="Grade",
-    bbox_to_anchor=(1.03, 1),
-    fontsize=15,
-    title_fontsize=16,
-)
-# add panel logo
-if HEMI == "left":
-    logo = "A"
-elif HEMI == "right":
-    logo = "B"
-fig.text(
-    0.01, 1.05, logo,
-    fontsize=30,
-    fontweight="bold",
-    ha="left",
-    va="top"
-)
-fig.subplots_adjust(hspace=0.5)
-plt.tight_layout()
-# --- save ---
-fig_path.mkdir(exist_ok=True, parents=True)
-plt.savefig(
-    fname       = fig_path / fig_name,
-    format      = 'pdf',
-    dpi         = 300,
-    transparent = True,
-    bbox_inches = 'tight',
-    pad_inches  = 0.3
-)
-print("\nSuccessful: Figure is saved")
-plt.show()
+    """ # add panel logo
+    if HEMI == "left":
+        logo = "A"
+    elif HEMI == "right":
+        logo = "B"
+    fig.text(
+        0.01, 1.05, logo,
+        fontsize=30,
+        fontweight="bold",
+        ha="left",
+        va="top"
+    ) """
+    fig.subplots_adjust(hspace=0.5)
+    plt.tight_layout()
+    # --- save ---
+    fig_path.mkdir(exist_ok=True, parents=True)
+    plt.savefig(
+        fname       = fig_path / fig_name,
+        format      = 'pdf',
+        dpi         = 300,
+        transparent = True,
+        bbox_inches = 'tight',
+        pad_inches  = 0.3
+    )
+    print("\nSuccessful: Figure is saved")
+    plt.show()
 
 
 
 
-# %
+# %%
 # 6. === STEP 6 ===: Statistics: One-sample t-tetst
 # -----------------------------------------------
 all_results = []
@@ -405,11 +465,17 @@ for cond in conditions:
     data    = df_clean_dict[cond]
     results = []
     for roi, g in data.groupby("roi"):
+        # --- descriptive statistics ---
+        mean_r = g[cond].mean()
+        sd_r   = g[cond].std()   # standard deviation of the mean
+
         x             = g["Fisher"].dropna() # Fisher's correlation coefficients
         t_stat, p_val = stats.ttest_1samp(x, 0)
         results.append({
                             "condition": cond,
                             "roi":       roi,
+                            "mean_r":    mean_r,
+                            "sd_r":      sd_r,
                             "t":         t_stat,
                             "p":         p_val,
                             "n":         len(x)
@@ -430,21 +496,21 @@ for cond in conditions:
     # --- store ---
     all_results.append(df_cond)
 # --- resutls with all conditions ---
-df_all        = pd.concat(all_results, ignore_index=True)
+df_all      = pd.concat(all_results, ignore_index=True)
 df_top5_abs = (
     df_all
     .groupby("condition", group_keys=False)
-    .apply(lambda x: x.loc[x["t"].abs().nlargest(5).index])
+    .apply(lambda x: x.loc[x["t"].abs().nlargest(20).index])
     .reset_index(drop=True)
 )
 print(df_top5_abs)
 
 
-# %
+# %%
 # 7. === STEP 7 ===: Statistics: Linear regression
 # -----------------------------------------------
-
-all_results_lr = []
+all_grade_stats = []
+all_results_lr  = []
 # --- Fisher's r = β0 + β1*Grade/RT + e ---
 predictors = ["grade", "rt"]
 # --- each predictor ---
@@ -454,6 +520,18 @@ for pred in predictors:
         data = df_clean_dict[cond]
         rows = []
         for roi, g in data.groupby("roi"):
+
+            # descriptive statistics by grade
+            grade_stats = (
+                g.groupby("grade")[cond]
+                .agg(mean="mean", sd="std")
+                .reset_index()
+            )
+            grade_stats["condition"] = cond
+            grade_stats["roi"] = roi
+
+            all_grade_stats.append(grade_stats)
+
             model = smf.ols(f"Fisher ~ {pred}", data=g).fit()
             rows.append((
                 cond,
@@ -465,6 +543,7 @@ for pred in predictors:
                 len(g),
                 pred
             ))
+
         df_lm = pd.DataFrame(
             rows,
             columns = ["condition", "roi", "beta", "t", "p", "r2", "n", "predictor"]
@@ -486,4 +565,20 @@ for pred in predictors:
 # --- combine all predictors ---
 df_lm_all = pd.concat(all_results_lr, ignore_index=True)
 print(df_lm_all[df_lm_all["significant_fdr"] == True])
+
+# --- combine all grade summaries ---
+df_grade_stats = pd.concat(all_grade_stats, ignore_index=True)
+sig_pairs = df_lm_all.loc[
+    (df_lm_all["significant_fdr"] == True) &
+    (df_lm_all["predictor"] == "grade"),
+    ["condition", "roi"]
+].drop_duplicates()
+df_grade_stats_sig = df_grade_stats.merge(
+    sig_pairs,
+    on=["condition", "roi"],
+    how="inner"
+)
+pd.set_option("display.max_rows", None)
+pd.set_option("display.max_columns", None)
+df_grade_stats_sig
 # %%
