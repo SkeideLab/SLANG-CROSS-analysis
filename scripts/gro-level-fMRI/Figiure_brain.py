@@ -180,8 +180,9 @@ atlas_labels   = HO_ATLAS_MNI6.labels
 label_to_index = {name: i for i, name in enumerate(atlas_labels)}
 
 # Keep only goldenrod regions
-target_colors = ["goldenrod", "dodgerblue", "mediumvioletred", "limegreen"]
-for target_color in target_colors:
+target_colors  = ["goldenrod", "dodgerblue", "mediumvioletred", "limegreen"]
+target_regions = ["frontal", "parietal", "temporal", "occipital"]
+for target_color, target_region in zip(target_colors,target_regions):
     filtered_roi_map = {
         region: color
         for region, color in roi_color_map.items()
@@ -254,7 +255,7 @@ for target_color in target_colors:
     # save the figure
     roi_path = FIG_DIR / 'multimodal'
     roi_path.mkdir(exist_ok=True, parents=True)
-    path     = roi_path / f"{HEMI}_{target_color}-regions.pdf"
+    path     = roi_path / f"{HEMI}_{target_region}-regions.pdf"
     plt.savefig(
         path,
         format      = 'pdf',

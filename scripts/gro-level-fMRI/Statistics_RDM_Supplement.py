@@ -208,7 +208,8 @@ for cond in conditions:
 # -----------------------------------------------
 # Keep only goldenrod ROIs
 target_colors = ["goldenrod", "dodgerblue", "mediumvioletred", "limegreen"]
-for target_color in target_colors:
+target_regions = ["frontal", "parietal", "temporal", "occipital"]
+for target_color, target_region in zip(target_colors,target_regions):
 
     # --- figure ---
     fig, axes = plt.subplots(3, 1, figsize=(6, 8))
@@ -229,7 +230,7 @@ for target_color in target_colors:
 
     # --- labels ---
     fig_path   = FIG_DIR / 'multimodal'
-    fig_name   = f"{HEMI}_{target_color}_Correlations_Supplements.pdf"
+    fig_name   = f"{HEMI}_{target_region}_Correlations_Supplements.pdf"
     titles     = ['Word', 'Pseudoword', 'Semantic']
     xlabels    = [label for label in roi_abb.values()]
     order      = list(roi_colors.keys())
@@ -331,7 +332,8 @@ for target_color in target_colors:
 # 5. === STEP 5 ===: Distirbution of RDM metrcis by grade
 # -----------------------------------------------
 target_colors = ["goldenrod", "dodgerblue", "mediumvioletred", "limegreen"]
-for target_color in target_colors:
+target_regions = ["frontal", "parietal", "temporal", "occipital"]
+for target_color, target_region in zip(target_colors,target_regions):
 
     # --- figure ---
     fig, axes = plt.subplots(3, 1, figsize=(6, 8))
@@ -339,7 +341,7 @@ for target_color in target_colors:
 
     # --- key, title, fontsize ---
     fig_path  = FIG_DIR / 'multimodal'
-    fig_name  = f"{HEMI}_{target_color}_Correlations_gradewise_supplements.pdf"
+    fig_name  = f"{HEMI}_{target_region}_Correlations_gradewise_supplements.pdf"
     configs   = [
                 ("word_multi",     "Word",     15),
                 ("pseudo_multi",   "Pseudoword",   15),
