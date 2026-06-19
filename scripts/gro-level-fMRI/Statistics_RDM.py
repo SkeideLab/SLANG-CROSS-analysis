@@ -51,7 +51,7 @@ CONTRASTS      = [
                 ]
 FWHM_SMOOTHING = 9.0 # 6.0, 9.0, 12.0
 HEMI           = 'left'
-MODAL          = 'spoken' # multi, written, spoken 
+MODAL          = 'multi' # multi, written, spoken 
 EXC_SUBJECTS   = [
                 '108', '111', '113', '116', '118', '120', '121', '122', '124', '125', '126', '128', 
                 '201', '205', '206', '208', '220', '225', '226', '227', 
