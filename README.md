@@ -7,7 +7,6 @@ Code repository for the analysis of the SLANG-CROSS research project.
 
 This repository contains the workflow used in the SLANG-CROSS project, including:
 
-- Behavior data analysis
 - Regions of interest (ROIs)
 - Subject-level fMRI: general linear model (GLM)
 - Group-level fMRI: representational dissimilarity matrix (RDM)
@@ -21,11 +20,9 @@ This repository contains the workflow used in the SLANG-CROSS project, including
 ```text
 .
 ├── figures
-│   ├── behavior           # results from behavioral analsyis
 │   └── multimodal         # results from multimodal analsyis
 │
 ├── scripts
-│   ├── behavior           # scripts for behavioral analsyis
 │   ├── gro-level-fMRI     # scripts for group-level analsyis
 │   ├── sub-level-fMRI     # scripts for subject-level analsyis
 │   ├── helpers.py         # set of functions
