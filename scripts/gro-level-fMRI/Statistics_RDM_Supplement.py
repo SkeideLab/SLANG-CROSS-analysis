@@ -50,7 +50,8 @@ CONTRASTS      = [
                 'audios_words-audios_pseudo',
                 ]
 FWHM_SMOOTHING = 9.0 # 6.0, 9.0, 12.0
-HEMI           = 'right' 
+HEMI           = 'left'
+MODAL          = 'multi' # multi, written, spoken  
 EXC_SUBJECTS   = [
                 '108', '111', '113', '116', '118', '120', '121', '122', '124', '125', '126', '128', 
                 '201', '205', '206', '208', '220', '225', '226', '227', 
@@ -183,18 +184,19 @@ def get_removed_outliers(df, group_col, value_col, k=1.5):
         return (group[value_col] < lower) | (group[value_col] > upper) 
     mask      = df.groupby(group_col, group_keys=False).apply(_mask) 
     return df[mask]
-conditions = ['word_multi', 'pseudo_multi', 'semantic_multi']
+conditions = [
+    f'word_{MODAL}',
+    f'pseudo_{MODAL}',
+    f'semantic_{MODAL}'
+]
+
 df_clean_dict = {}
 removed_dict  = {}
 # --- remove it for each condition ---
 for cond in conditions:
-    df_cond            = df[['roi', 'grade', 'rt', cond]].copy()
+    df_cond            = df[['roi', 'grade', 'number_run', cond]].copy()
     removed            = get_removed_outliers(df_cond, 'roi', cond)
     df_clean           = df_cond.drop(removed.index).copy()
-    # --- Fisher transformation ---
-    df_clean["Fisher"] = np.arctanh(
-        df_clean[cond].clip(-0.999999, 0.999999)
-    )
     df_clean_dict[cond] = df_clean
     removed_dict[cond]  = removed
     # --- print out ---
@@ -231,7 +233,7 @@ for target_color, target_region in zip(target_colors,target_regions):
     # --- labels ---
     fig_path   = FIG_DIR / 'multimodal'
     fig_name   = f"{HEMI}_{target_region}_Correlations_Supplements.pdf"
-    titles     = ['Word', 'Pseudoword', 'Semantic']
+    titles     = ['Word', 'Pseudoword', 'Word > Pseudoword']
     xlabels    = [label for label in roi_abb.values()]
     order      = list(roi_colors.keys())
     palette    = list(roi_colors.values())   # IMPORTANT: use dict, not list
@@ -252,7 +254,8 @@ for target_color, target_region in zip(target_colors,target_regions):
                                             categories=order,
                                             ordered=True
                                         )
-        df_cond = df_cond.sort_values("roi")
+        df_cond      = df_cond.sort_values("roi")
+        # df_cond['r'] = np.tanh(df_cond[cond])
 
         # --- Plotting: RainCloud ---
         pt.RainCloud(x              = "roi", 
@@ -271,7 +274,7 @@ for target_color, target_region in zip(target_colors,target_regions):
         # --- Aesthetics ---
         ax.spines['top'].set_visible(False)
         ax.spines['right'].set_visible(False)
-        ax.set_ylim([-0.5, 1]) # Dynamic limit to fit stars
+        ax.set_ylim([-0.5, 1.5]) 
         ax.tick_params(axis='y', labelsize=10)
         ax.yaxis.grid(True, which='major', linestyle='-', linewidth=0.5, alpha=0.5)
         ax.yaxis.set_major_locator(plt.MultipleLocator(0.2))
@@ -285,7 +288,7 @@ for target_color, target_region in zip(target_colors,target_regions):
             ax.set_xlabel("")
         ax.axhline(y=0, linestyle='--', linewidth=1, color='black', alpha=0.7)
         ax.set_xlabel(" ", fontsize=7)
-        ax.set_ylabel(r"Similarity ($r$)", fontsize=12)
+        ax.set_ylabel(r"Similarity (Fisher's $z$)", fontsize=12)
     """ # add legend
     legend_handles = [
         Patch(facecolor=color, edgecolor='black', linewidth=1, label=lobe)
@@ -345,7 +348,7 @@ for target_color, target_region in zip(target_colors,target_regions):
     configs   = [
                 ("word_multi",     "Word",     15),
                 ("pseudo_multi",   "Pseudoword",   15),
-                ("semantic_multi", "Semantic", 15),
+                ("semantic_multi", "Word > Pseudoword", 15),
                 ]
 
     # Keep matching abbreviations only
@@ -370,8 +373,8 @@ for target_color, target_region in zip(target_colors,target_regions):
     def style_axis(ax, title, fontsize):
         ax.set_title(title, fontsize=15)
         ax.set_xlabel(" ", fontsize=fontsize)
-        ax.set_ylabel(r"Similarity ($r$)", fontsize=12)
-        ax.set_ylim(-0.2, 0.8)
+        ax.set_ylabel(r"Similarity (Fisher's $z$)", fontsize=12)
+        ax.set_ylim(-0.2, 1)
         ax.yaxis.set_major_locator(plt.MultipleLocator(0.2))
         ax.tick_params(axis="both", which="major", length=3, width=1)
         ax.spines['top'].set_visible(False)
@@ -392,7 +395,8 @@ for target_color, target_region in zip(target_colors,target_regions):
                                         categories=order,
                                         ordered=True
                                     )
-        df_cond = df_cond.sort_values("roi")
+        df_cond      = df_cond.sort_values("roi")
+        # df_cond['r'] = np.tanh(df_cond[key])
 
         sns.barplot(
             data=df_cond,
@@ -467,11 +471,13 @@ for cond in conditions:
     data    = df_clean_dict[cond]
     results = []
     for roi, g in data.groupby("roi"):
-        # --- descriptive statistics ---
-        mean_r = g[cond].mean()
-        sd_r   = g[cond].std()   # standard deviation of the mean
 
-        x             = g["Fisher"].dropna() # Fisher's correlation coefficients
+        x = g[cond].dropna() # Fisher's correlation coefficients
+        # covert fisher to raw r
+        # r = np.tanh(x)
+        # descriptive statistics
+        mean_r = x.mean()
+        sd_r   = x.std(ddof=1)   # sample SD
         t_stat, p_val = stats.ttest_1samp(x, 0)
         results.append({
                             "condition": cond,
@@ -502,10 +508,12 @@ df_all      = pd.concat(all_results, ignore_index=True)
 df_top5_abs = (
     df_all
     .groupby("condition", group_keys=False)
-    .apply(lambda x: x.loc[x["t"].abs().nlargest(20).index])
+    .apply(lambda x: x.loc[x["mean_r"].abs().nlargest(20).index])
     .reset_index(drop=True)
 )
 print(df_top5_abs)
+
+
 
 
 # %%
@@ -513,57 +521,57 @@ print(df_top5_abs)
 # -----------------------------------------------
 all_grade_stats = []
 all_results_lr  = []
-# --- Fisher's r = β0 + β1*Grade/RT + e ---
-predictors = ["grade", "rt"]
-# --- each predictor ---
-for pred in predictors:
-    # --- each condition ---
-    for cond in conditions:
-        data = df_clean_dict[cond]
-        rows = []
-        for roi, g in data.groupby("roi"):
+# --- Fisher's r = β0 + β1*Grade β2*Number of run + e ---
 
-            # descriptive statistics by grade
-            grade_stats = (
-                g.groupby("grade")[cond]
-                .agg(mean="mean", sd="std")
-                .reset_index()
-            )
-            grade_stats["condition"] = cond
-            grade_stats["roi"] = roi
+# --- each condition ---
+for cond in conditions:
+    data = df_clean_dict[cond]
+    rows = []
+    for roi, g in data.groupby("roi"):
 
-            all_grade_stats.append(grade_stats)
-
-            model = smf.ols(f"Fisher ~ {pred}", data=g).fit()
-            rows.append((
-                cond,
-                roi,
-                model.params.get(pred, np.nan),
-                model.tvalues.get(pred, np.nan),
-                model.pvalues.get(pred, np.nan),
-                model.rsquared,
-                len(g),
-                pred
-            ))
-
-        df_lm = pd.DataFrame(
-            rows,
-            columns = ["condition", "roi", "beta", "t", "p", "r2", "n", "predictor"]
+        # g['r'] = np.tanh(g[cond])
+        # descriptive statistics by grade
+        grade_stats = (
+            g.groupby("grade")[cond]
+            .agg(mean="mean", sd="std")
+            .reset_index()
         )
-        # --- FDR correction ---
-        df_lm["p_fdr"]           = np.nan
-        df_lm["significant_fdr"] = False
-        valid                    = df_lm["p"].notna()
-        if valid.any():
-            reject, p_fdr, _, _  = multipletests(
-                                                    df_lm.loc[valid, "p"],
-                                                    alpha  = 0.05,
-                                                    method = "fdr_bh"
-                                                )
-            df_lm.loc[valid, "p_fdr"]           = p_fdr
-            df_lm.loc[valid, "significant_fdr"] = reject
-        # --- combine all conditions ---
-        all_results_lr.append(df_lm)
+        grade_stats["condition"] = cond
+        grade_stats["roi"] = roi
+
+        all_grade_stats.append(grade_stats)
+
+        model = smf.ols(f"{cond} ~ grade + number_run", data=g).fit()
+        rows.append((
+            cond,
+            roi,
+            model.params.get("grade", np.nan),
+            model.tvalues.get("grade", np.nan),
+            model.pvalues.get("grade", np.nan),
+            model.rsquared,
+            len(g),
+            "grade"
+        ))
+
+    df_lm = pd.DataFrame(
+        rows,
+        columns = ["condition", "roi", "beta", "t", "p", "r2", "n", "predictor"]
+    )
+    # --- FDR correction ---
+    df_lm["p_fdr"]           = np.nan
+    df_lm["significant_fdr"] = False
+    valid                    = df_lm["p"].notna()
+    if valid.any():
+        reject, p_fdr, _, _  = multipletests(
+                                                df_lm.loc[valid, "p"],
+                                                alpha  = 0.05,
+                                                method = "fdr_bh"
+                                            )
+        df_lm.loc[valid, "p_fdr"]           = p_fdr
+        df_lm.loc[valid, "significant_fdr"] = reject
+    # --- combine all conditions ---
+    all_results_lr.append(df_lm)
+
 # --- combine all predictors ---
 df_lm_all = pd.concat(all_results_lr, ignore_index=True)
 print(df_lm_all[df_lm_all["significant_fdr"] == True])

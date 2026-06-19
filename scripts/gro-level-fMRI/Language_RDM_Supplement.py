@@ -99,6 +99,9 @@ for subject in subjects:
         spoken_pseudo_beta_lists.append(spoken_pseudo_beta_path)
         written_semantic_beta_lists.append(written_semantic_beta_path)
         spoken_semantic_beta_lists.append(spoken_semantic_beta_path)
+    
+    # count the total number of runs available
+    n_run = len(written_beta_lists)
 
     combined = written_beta_lists + spoken_beta_lists + written_pseudo_beta_lists + spoken_pseudo_beta_lists + written_semantic_beta_lists + spoken_semantic_beta_lists
 
@@ -124,7 +127,7 @@ for subject in subjects:
 
         # Skip if nothing left after filtering
         if not filtered_paths:
-            print(f"Skipping {roi_name}: no valid paths after filtering")
+            # print(f"Skipping {roi_name}: no valid paths after filtering")
             continue
         
         vector[roi_name] = np.vstack([
@@ -133,12 +136,22 @@ for subject in subjects:
         ])
     
     # Representational Dissimilarity Matrix (written vs spoken)
-    corr_matrices = {
+    """     corr_matrices = {
+        roi: 1 - np.corrcoef(data)
+        for roi, data in vector.items()
+    } """
+    corr_dis_matrices = {
         roi: 1 - np.corrcoef(data)
         for roi, data in vector.items()
     }
+    corr_fish_matrices = {
+        roi: np.arctanh(
+            np.clip(np.corrcoef(data), -0.999, 0.999)
+        )
+        for roi, data in vector.items()
+    }
 
-    # Visualize RDM
+    """     # Visualize RDM
     roi_target = roi_names[0]
     corr       = corr_matrices[roi_target]
 
@@ -154,7 +167,7 @@ for subject in subjects:
     plt.xticks(range(n), labels)
     plt.yticks(range(n), labels)
     plt.xlabel('Run', fontsize=11)
-    plt.ylabel('Run', fontsize=11)
+    plt.ylabel('Run', fontsize=11) """
 
     """ # save the figure
     roi_path = FIG_DIR / 'multimodal'
@@ -168,20 +181,31 @@ for subject in subjects:
         bbox_inches = 'tight',
         pad_inches  = 0.3
     )
-    print(f"\nSuccessful: Figure RDM is saved ") """
-    plt.show()
+    print(f"\nSuccessful: Figure RDM is saved ") 
+    plt.show() """
 
     # %
     # Compute each RDM metrics
     results = {}
-    for region, corr in corr_matrices.items():
+    for region, corr in corr_fish_matrices.items():
         n_runs            = int(corr.shape[0] / 6)
 
         word              = range(1, n_runs + 1)
         spoken            = range(n_runs + 1, 2 * n_runs + 1)
 
-        base_multi_index  = []
+        base_written_index = []
+        for i in word:
+            for j in word:
+                if j > i:
+                    base_written_index.append((i, j))
 
+        base_spoken_index = []
+        for i in spoken:
+            for j in spoken:
+                if j > i:
+                    base_spoken_index.append((i, j))
+
+        base_multi_index  = []
         for i in spoken:
             for j in word:
                 if j >= i - n_runs + 1:
@@ -192,16 +216,37 @@ for subject in subjects:
                 if j <= i - n_runs - 1:
                     base_multi_index.append((i, j))
 
+        # word
+        idx_word_written   = [(i-1, j-1) for i, j in base_written_index]
+        idx_word_spoken    = [(i-1, j-1) for i, j in base_spoken_index]
         idx_word_multi     = [(i-1, j-1) for i, j in base_multi_index]
-        idx_pseudo_multi   = [(i+(n_runs*2), j+(n_runs*2)) for i, j in idx_word_multi]
-        idx_semantic_multi = [(i+(n_runs*3), j+(n_runs*3)) for i, j in idx_word_multi]
+
+        # pseudoword 
+        idx_pseudoword_written   = [(i+(n_runs*2), j+(n_runs*2)) for i, j in idx_word_written]
+        idx_pseduoword_spoken    = [(i+(n_runs*2), j+(n_runs*2)) for i, j in idx_word_spoken]
+        idx_pseudo_multi         = [(i+(n_runs*2), j+(n_runs*2)) for i, j in idx_word_multi]
+
+        # semantic
+        idx_semantic_written = [(i+(n_runs*3), j+(n_runs*3)) for i, j in idx_word_written]
+        idx_semantic_spoken  = [(i+(n_runs*3), j+(n_runs*3)) for i, j in idx_word_spoken] 
+        idx_semantic_multi   = [(i+(n_runs*3), j+(n_runs*3)) for i, j in idx_word_multi]
 
 
         results[region]    = {
-            "word_multi": 1 - np.mean([corr[i, j] for i, j in idx_word_multi]),
-            "pseudo_multi": 1 - np.mean([corr[i, j] for i, j in idx_pseudo_multi]),
-            "semantic_multi": 1 - np.mean([corr[i, j] for i, j in idx_semantic_multi]),
+            "word_written": np.mean([corr[i, j] for i, j in idx_word_written]),
+            "word_spoken": np.mean([corr[i, j] for i, j in idx_word_spoken]),
+            "word_multi": np.mean([corr[i, j] for i, j in idx_word_multi]),
+
+            "pseudo_written": np.mean([corr[i, j] for i, j in idx_pseudoword_written]),
+            "pseudo_spoken": np.mean([corr[i, j] for i, j in idx_pseduoword_spoken]),
+            "pseudo_multi": np.mean([corr[i, j] for i, j in idx_pseudo_multi]),
+
+            "semantic_written": np.mean([corr[i, j] for i, j in idx_semantic_written]),
+            "semantic_spoken": np.mean([corr[i, j] for i, j in idx_semantic_spoken]),
+            "semantic_multi": np.mean([corr[i, j] for i, j in idx_semantic_multi]),
+            "number_run": n_run,
         }
+
     print(f"{subject.name} is done")
     all_results[subject.name] = results
 
@@ -224,29 +269,9 @@ for subject, rois in all_results.items():
 df          = pd.DataFrame(rows)
 df['grade'] = df['subject'].str.extract(r'-(\d+)').astype(int) // 100
 
-# read RT
-results       = []
-for sub in subjects:
-    task_path = sub / 'behavior' / 'accuracy_summary.csv'
-    task_df   = pd.read_csv(task_path)
-    mean_rt   = task_df['RT_all'].mean()
-    # Store results as a dict
-    results.append({
-        'subject': sub.name,
-        'rt': mean_rt,
-
-    })
-task_df       = pd.DataFrame(results)
-
-# combine both RDM metrics and RT
-df_merged = df.merge(
-    task_df[["subject", "rt"]],
-    on    = "subject",
-    how   = "left"
-)
-
 # save it as csv file
 path      = OUT_DIR / 'multimodal' / f'{HEMI}_RDM_metrics_supplements.csv'
-df_merged.to_csv(path, index=False)
+df.to_csv(path, index=False)
+print(f"Data is saved in the path: {path}")
 
 # %%

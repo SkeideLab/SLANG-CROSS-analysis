@@ -50,7 +50,8 @@ CONTRASTS      = [
                 'audios_words-audios_pseudo',
                 ]
 FWHM_SMOOTHING = 9.0 # 6.0, 9.0, 12.0
-HEMI           = 'left' 
+HEMI           = 'left'
+MODAL          = 'spoken' # multi, written, spoken 
 EXC_SUBJECTS   = [
                 '108', '111', '113', '116', '118', '120', '121', '122', '124', '125', '126', '128', 
                 '201', '205', '206', '208', '220', '225', '226', '227', 
@@ -93,7 +94,7 @@ roi_labels     = {
                     "Inferior Frontal Gyrus, pars opercularis": "opIFG",
                     "Supramarginal Gyrus, anterior division": "aSMG",
                     "Supramarginal Gyrus, posterior division": "pSMG",
-                    "Angular Gyrus": "Angular",
+                    "Angular Gyrus": "AG",
                     "Superior Temporal Gyrus, anterior division": "aSTG",
                     "Superior Temporal Gyrus, posterior division": "pSTG",
                     "Temporal Fusiform Cortex, posterior division": "pTFC",
@@ -118,18 +119,19 @@ def get_removed_outliers(df, group_col, value_col, k=1.5):
         return (group[value_col] < lower) | (group[value_col] > upper) 
     mask      = df.groupby(group_col, group_keys=False).apply(_mask) 
     return df[mask]
-conditions = ['word_multi', 'pseudo_multi', 'semantic_multi']
+conditions = [
+    f'word_{MODAL}',
+    f'pseudo_{MODAL}',
+    f'semantic_{MODAL}'
+]
+
 df_clean_dict = {}
 removed_dict  = {}
 # --- remove it for each condition ---
 for cond in conditions:
-    df_cond             = df[['roi', 'grade', 'rt', cond]].copy()
-    removed            = get_removed_outliers(df_cond, 'roi', cond)
-    df_clean           = df_cond.drop(removed.index).copy()
-    # --- Fisher transformation ---
-    df_clean["Fisher"] = np.arctanh(
-        df_clean[cond].clip(-0.999999, 0.999999)
-    )
+    df_cond             = df[['roi', 'grade', 'number_run', cond]].copy()
+    removed             = get_removed_outliers(df_cond, 'roi', cond)
+    df_clean            = df_cond.drop(removed.index).copy()
     df_clean_dict[cond] = df_clean
     removed_dict[cond]  = removed
     # --- print out ---
@@ -142,26 +144,30 @@ for cond in conditions:
 # 4. === STEP 4 ===: Distirbution of RDM metrcis 
 # -----------------------------------------------
  # --- figure ---
-fig, axes = plt.subplots(1, 3, figsize=(12, 5))
+fig, axes = plt.subplots(1, 2, figsize=(10, 5))
 axes = axes.flatten() 
  # --- labels ---
 fig_path  = FIG_DIR / 'multimodal'
-fig_name  = f"{HEMI}_Correlations.pdf"
-titles    = ['Word', 'Pseudoword', 'Semantic']
+fig_name  = f"{HEMI}_{MODAL}_Correlations.pdf"
+titles    = ['Word', 'Pseudoword']
 order     = list(roi_color_map.keys())
 palette   = list(roi_color_map.values())
 xlabels   = [name for name in roi_labels.values()]
+
+tar_conditions = [f'word_{MODAL}', f'pseudo_{MODAL}']
  # --- plot ---
-for i, cond in enumerate(conditions):
+for i, cond in enumerate(tar_conditions):
     ax      = axes[i]
     df_cond = df_clean_dict[cond]
+    # covert fisher to raw r
+    # df_cond['r'] = np.tanh(df_cond[cond])
     # --- Plotting: RainCloud ---
     pt.RainCloud(x              = "roi", 
-                 y              = cond, 
+                 y              = cond, # "r", 
                  data           = df_cond,
                  order          = order,
                  palette        = palette,
-                 point_size     = 2,
+                 point_size     = 4,
                  rain_alpha     = 0.6,
                  width_viol     = 1, 
                  width_box      = 0.3, 
@@ -172,7 +178,7 @@ for i, cond in enumerate(conditions):
     # --- Aesthetics ---
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
-    ax.set_ylim([-0.5, 1]) # Dynamic limit to fit stars
+    ax.set_ylim([-0.4, 1.5]) # Dynamic limit to fit stars
     ax.yaxis.grid(True, which='major', linestyle='-', linewidth=0.5, alpha=0.5)
     short_title = titles[i]
     ax.set_title(short_title, fontsize=15)
@@ -180,7 +186,7 @@ for i, cond in enumerate(conditions):
     ax.axhline(y=0, linestyle='--', linewidth=1, color='black', alpha=0.7)
     ax.set_xlabel(" ", fontsize=1)
     if i == 0:
-        ax.set_ylabel(r"Multimodal similarity ($r$)", fontsize=14)
+        ax.set_ylabel(r"Similarity (Fisher's $z$)", fontsize=15)
     else:
         ax.set_ylabel(None)
 plt.tight_layout()
@@ -203,16 +209,21 @@ plt.show()
 # 5. === STEP 5 ===: Distirbution of RDM metrcis by grade
 # -----------------------------------------------
 # --- figure ---
-fig, axes = plt.subplots(1, 3, figsize=(12, 5))
+fig, axes = plt.subplots(1, 2, figsize=(10, 5))
 axes      = axes.flatten()
 # --- key, title, fontsize ---
 fig_path  = FIG_DIR / 'multimodal'
-fig_name  = f"{HEMI}_Correlations_gradewise.pdf"
-configs   = [
-             ("word_multi",     "Word",     15),
-             ("pseudo_multi",   "Pseudoword",   15),
-             ("semantic_multi", "Semantic", 15),
-            ]
+fig_name  = f"{HEMI}_{MODAL}_Correlations_gradewise.pdf"
+if MODAL in ("written", "spoken"):
+    configs   = [
+                (f"word_{MODAL}",     f"{MODAL.capitalize()} Word",     15),
+                (f"pseudo_{MODAL}",   f"{MODAL.capitalize()} Pseudoword",   15),
+                ]
+else:
+    configs   = [
+                (f"word_{MODAL}",     "Word",     15),
+                (f"pseudo_{MODAL}",   "Pseudoword",   15),
+                ]
 xlabels    = [label for label in roi_labels.values()]
 legend_map = {
                 1: "darkgoldenrod",
@@ -224,7 +235,7 @@ def style_axis(ax, title, fontsize, xlabels):
     ax.set_title(title, fontsize=15)
     ax.set_xlabel(None)
     ax.set_xticklabels(xlabels, fontsize=14, rotation=60)
-    ax.set_ylim(-0.2, 0.6)
+    ax.set_ylim(0, 1)
     ax.tick_params(axis="both", which="major", length=3, width=1)
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
@@ -236,10 +247,13 @@ def style_axis(ax, title, fontsize, xlabels):
     ax.grid(True, axis='y', color='gray', alpha=0.3)
 # --- plot ---
 for ax, (key, title, fs) in zip(axes, configs):
+    df_cond = df_clean_dict[key]
+    # covert fisher to raw r
+    # df_cond['r'] = np.tanh(df_cond[key])
     sns.barplot(
-        data=df_clean_dict[key],
+        data=df_cond,
         x="roi",
-        y=key,
+        y=key, # "r",
         hue="grade",
         palette=legend_map,
         edgecolor="black", 
@@ -250,10 +264,12 @@ for ax, (key, title, fs) in zip(axes, configs):
         patch.set_alpha(0.8)   # decrease alpha (0–1)
 
     style_axis(ax, title, fs, xlabels)
-    if key=='word_multi':
-        ax.set_ylabel(r"Multimodal similarity ($r$)", fontsize=14)
+    if key==f'word_{MODAL}':
+        ax.set_ylabel(r"Similarity (Fisher's $z$)", fontsize=15)
     else:
         ax.set_ylabel(None)
+    if MODAL in ("written", "spoken"):
+        ax.set_ylim(0, 1)
 
 # add legend
 legend_handles = [
@@ -283,7 +299,6 @@ print("\nSuccessful: Figure is saved")
 plt.show()
 
 
-
 # %%
 # 6. === STEP 6 ===: Statistics: One-sample t-test
 # -----------------------------------------------
@@ -296,13 +311,17 @@ for cond in conditions:
 
     for roi, g in data.groupby("roi"):
 
-        x = g["Fisher"].dropna()
+        # fisher's r
+        x = g[cond].dropna()
+
+        # covert fisher to raw r
+        # r = np.tanh(x)
 
         # descriptive statistics
         mean_val = x.mean()
         sd_val   = x.std(ddof=1)   # sample SD
 
-        # one-sample t-test against 0
+        # one-sample t-test against 0 using fisher's r
         t_stat, p_val = stats.ttest_1samp(x, 0)
 
         n  = len(x)
@@ -355,78 +374,79 @@ df_all
 
 all_results_lr = []
 
-predictors = ["grade", "rt"]
 
-for pred in predictors:
-    for cond in conditions:
+for cond in conditions:
 
-        data = df_clean_dict[cond]
-        rows = []
+    data = df_clean_dict[cond]
+    rows = []
 
-        for roi, g in data.groupby("roi"):
+    for roi, g in data.groupby("roi"):
 
-            # descriptive statistics by grade
-            grade_stats = (
-                g.groupby("grade")[cond]
-                .agg(mean="mean", sd="std")
-                .reset_index()
-            )
+        # g['r'] = np.tanh(g[cond])
+        # descriptive statistics by grade
+        grade_stats = (
+            g.groupby("grade")[cond]
+            .agg(mean="mean", sd="std")
+            .reset_index()
+        )
 
-            # columns become:
-            # mean_g1, sd_g1, mean_g2, sd_g2, ...
-            grade_dict = {}
+        # columns become:
+        # mean_g1, sd_g1, mean_g2, sd_g2, ...
+        grade_dict = {}
 
-            for grade, vals in grade_stats.iterrows():
-                grade_dict[f"mean_g{grade}"] = vals["mean"]
-                grade_dict[f"sd_g{grade}"]   = vals["sd"]
+        for grade, vals in grade_stats.iterrows():
+            grade_dict[f"mean_g{grade}"] = vals["mean"]
+            grade_dict[f"sd_g{grade}"]   = vals["sd"]
 
-            # regression model
-            model = smf.ols(f"Fisher ~ {pred}", data=g).fit()
+        # regression model
+        model = smf.ols(f"{cond} ~ grade + number_run", data=g).fit()
 
-            beta = model.params.get(pred, np.nan)
-            tval = model.tvalues.get(pred, np.nan)
-            pval = model.pvalues.get(pred, np.nan)
-            se   = model.bse.get(pred, np.nan)          
-            df   = model.df_resid                       
-            r2   = model.rsquared
-            n    = len(g)
+        beta = model.params.get("grade", np.nan)
+        tval = model.tvalues.get("grade", np.nan)
+        pval = model.pvalues.get("grade", np.nan)
+        se   = model.bse.get("grade", np.nan)          
+        df   = model.df_resid                       
+        r2   = model.rsquared
+        n    = len(g)
 
-            # combine everything
-            row = {
-                "condition": cond,
-                "roi": roi,
-                "beta": beta,
-                "se": se,
-                "t": tval,
-                "df": df,
-                "p": pval,
-                "r2": r2,
-                "n": n,
-                "predictor": pred,
-                **grade_dict
-            }
+        # combine everything
+        row = {
+            "condition": cond,
+            "roi": roi,
+            "beta": beta,
+            "se": se,
+            "t": tval,
+            "df": df,
+            "p": pval,
+            "r2": r2,
+            "n": n,
+            "predictor": "grade",
+            **grade_dict
+        }
 
-            rows.append(row)
-        df_lm = pd.DataFrame(rows)
+        rows.append(row)
+    df_lm = pd.DataFrame(rows)
 
-        # --- FDR correction ---
-        df_lm["p_fdr"] = np.nan
-        df_lm["significant_fdr"] = False
+    # --- FDR correction ---
+    df_lm["p_fdr"] = np.nan
+    df_lm["significant_fdr"] = False
 
-        valid = df_lm["p"].notna()
+    valid = df_lm["p"].notna()
 
-        if valid.any():
-            reject, p_fdr, _, _ = multipletests(
-                df_lm.loc[valid, "p"],
-                alpha=0.05,
-                method="fdr_bh"
-            )
+    if valid.any():
+        reject, p_fdr, _, _ = multipletests(
+            df_lm.loc[valid, "p"],
+            alpha=0.05,
+            method="fdr_bh"
+        )
 
-            df_lm.loc[valid, "p_fdr"] = p_fdr
-            df_lm.loc[valid, "significant_fdr"] = reject
+        df_lm.loc[valid, "p_fdr"] = p_fdr
+        df_lm.loc[valid, "significant_fdr"] = reject
 
-        all_results_lr.append(df_lm)
+    all_results_lr.append(df_lm)
 
 df_lm_all = pd.concat(all_results_lr, ignore_index=True)
 df_lm_all
 
+
+# %%
