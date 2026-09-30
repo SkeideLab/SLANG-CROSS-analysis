@@ -25,6 +25,7 @@ This repository contains the workflow used in the SLANG-CROSS project, including
 ├── scripts
 │   ├── gro-level-fMRI     # scripts for group-level analsyis
 │   ├── sub-level-fMRI     # scripts for subject-level analsyis
+│   ├── behav.py           # script for sample demographics and fMRI characteristics
 │   ├── helpers.py         # set of functions
 │   ├── my_packages.py     # set of libraries
 │   └── roi_create.py      # script for ROIs

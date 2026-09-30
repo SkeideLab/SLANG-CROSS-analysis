@@ -1,15 +1,17 @@
 # %% [markdown]
-# ## Group-level Behavioral
+# ## Sample demographics and fMRI characteristics
 #
 # **Pipeline Overview**
-# 1. === STEP 1 ===: Install packages
-# 2. === STEP 2 ===: Set parameters
-
-
-
+# 1. === STEP 1 ===: Set environment
+# 2. === STEP 2 ===: Demographics (age and sex)
+# 3. === STEP 3 ===: Avearge fMRI task response
+# 4. === STEP 4 ===: Avearge fMRI task accuracy
+# 5. === STEP 5 ===: Average fMRI task reaction time
+# 6. === STEP 6 ===: Average fMRI framewise displacement
+# 7. === STEP 7 ===: Number of available runs
 
 # %%
-# 1. === STEP 1 ===: Install packages
+# 1. === STEP 1 ===: Set environment
 # -----------------------------------------------
 # install necessary packages
 import sys
@@ -30,11 +32,6 @@ sys.path.append(str(SCRIP_DIR))
 import my_packages
 from my_packages import *
 
-
-
-# %%
-# 2. === STEP 2 ===: Prepare datasets
-# -----------------------------------------------
 EXC_SUBJECTS   = [
                 '108', '111', '113', '116', '118', '120', '121', '122', '124', '125', '126', '128', 
                 '201', '205', '206', '208', '220', '225', '226', '227', 
@@ -47,9 +44,11 @@ subjects      = [s for s in subjects if s.name not in exclude]
 subject_names = [p.name.replace('sub-', '') for p in subjects]
 
 
+
+
 # %%
-# 3. === STEP 3 ===: Check demographics
-# -----------------------------------------------
+# 2. === STEP 2 ===: Demographics (age and sex)
+# --------------------------------------------------
 demo_path = BIDS_DIR / "participants.tsv" 
 demo_df = pd.read_csv(demo_path, sep="\t")
 demo_df = demo_df[
@@ -108,9 +107,13 @@ sex_summary = (
 print("\nSex count by grade:")
 print(sex_summary)
 
+
+
+
+
 # %%
-# 3. === STEP 3 ===: Check fMRI characteristics
-# -----------------------------------------------
+# 3. === STEP 3 ===: Avearge fMRI task response
+# ---------------------------------------------------
 # mriqc_path
 mriqc_path = BIDS_DIR / "derivatives" / "mriqc"
 
@@ -166,17 +169,9 @@ for subject in subjects:
 
     df_list.append(df)
 
-
 # Concatenate all subjects
 df_all = pd.concat(df_list, ignore_index=True)
-print(df_all)
-print(f"Total rows: {len(df_all)}")
 
-
-
-# %%
-# 3. === STEP 3 ===: Check task engagement
-# -----------------------------------------------
 # Mean and SD of responses_all across all subjects
 responses_all_summary = (
     df_all["responses_all"]
@@ -207,8 +202,11 @@ model = sm.OLS(y, X).fit()
 print(model.summary())
 
 
+
+
+
 # %%
-# 3. === STEP 3 ===: Check accuracy
+# 4. === STEP 4 ===: Avearge task accuracy
 # -----------------------------------------------
 # Mean and SD of responses_all across all subjects
 acc_all_summary = (
@@ -250,9 +248,11 @@ print(model.summary())
 
 
 
+
+
 # %%
-# 3. === STEP 3 ===: Check reaction time
-# -----------------------------------------------
+# 5. === STEP 5 ===: Average fMRI task reaction time
+# --------------------------------------------------
 # Mean and SD of responses_all across all subjects
 RT_all_summary = (
     df_all["RT_all"]
@@ -293,9 +293,11 @@ print(model.summary())
 
 
 
+
+
 # %%
-# 3. === STEP 3 ===: Check head motion
-# -----------------------------------------------
+# 6. === STEP 6 ===: Average fMRI framewise displacement
+# -------------------------------------------------------
 # Mean and SD of responses_all across all subjects
 fd_all_summary = (
     df_all["fd"]
@@ -324,8 +326,11 @@ model = sm.OLS(y, X).fit()
 print(model.summary())
 
 
+
+
+
 # %%
-# 3. === STEP 3 ===: Check runs available
+# 7. === STEP 7 ===: Number of available runs
 # -----------------------------------------------
 runs_per_subject = (
     df_all
