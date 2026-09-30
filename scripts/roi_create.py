@@ -293,7 +293,7 @@ for roi in rois:
     GM_img                  = nib.load(Pediatric_GM)
     GM_data                 = GM_img.get_fdata()
     # GM probability threshold
-    GM_THRESH               = 0.4
+    GM_THRESH               = 0.5
     # remove not GM regions
     if roi in roi_dict.keys():
         # keep labels where GM > threshold, else 0

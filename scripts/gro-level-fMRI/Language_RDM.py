@@ -47,7 +47,7 @@ CONTRASTS      = [
                 'images_words-images_pseudo',
                 'audios_words-audios_pseudo',
                 ]
-FWHM_SMOOTHING = 9.0 # 6.0, 9.0, 12.0
+FWHM_SMOOTHING = 5.0 # 6.0, 9.0, 12.0
 HEMI           = 'left' 
 EXC_SUBJECTS   = [
                 '108', '111', '113', '116', '118', '120', '121', '122', '124', '125', '126', '128', 
@@ -70,6 +70,11 @@ ROIs           = {
                         "Superior Temporal Gyrus, anterior division",
                         "Superior Temporal Gyrus, posterior division"
                     ],
+                    "MTG": [
+                        "Middle Temporal Gyrus, anterior division",
+                        "Middle Temporal Gyrus, posterior division",
+                        "Middle Temporal Gyrus, temporooccipital part"
+                    ],
                     "Fusiform": [
                         "Temporal Fusiform Cortex, posterior division",
                         "Temporal Occipital Fusiform Cortex",
@@ -83,6 +88,9 @@ roi_color_map  = {
                     "Angular Gyrus": "navy",
                     "Superior Temporal Gyrus, anterior division": "mediumvioletred",
                     "Superior Temporal Gyrus, posterior division": "darkmagenta",
+                    "Middle Temporal Gyrus, anterior division": "deeppink",
+                    "Middle Temporal Gyrus, posterior division": "hotpink",
+                    "Middle Temporal Gyrus, temporooccipital part": "palevioletred",
                     "Temporal Fusiform Cortex, posterior division": "green",
                     "Temporal Occipital Fusiform Cortex": "limegreen",
                     }
@@ -94,142 +102,164 @@ roi_labels     = {
                     "Angular Gyrus": "AG",
                     "Superior Temporal Gyrus, anterior division": "aSTG",
                     "Superior Temporal Gyrus, posterior division": "pSTG",
+                    "Middle Temporal Gyrus, anterior division": "aMTG",
+                    "Middle Temporal Gyrus, posterior division": "pMTG",
+                    "Middle Temporal Gyrus, temporooccipital part": "toMTG",
                     "Temporal Fusiform Cortex, posterior division": "pTFC",
                     "Temporal Occipital Fusiform Cortex": "TOFC",
                     }
 
-
 # %%
-# 3. === STEP 3 ===: visualize ROIs
-# -----------------------------------------------
+# %%
+# 3. === STEP 3 ===: visualize ROIs with glass brain
+# --------------------------------------------------
 
-# fsaverage surface
-fsaverage  = datasets.fetch_surf_fsaverage()
-if HEMI == 'left':
-    sulc       = fsaverage.sulc_left
-    mesh       = fsaverage.pial_left
-    white_mesh = fsaverage.white_left
-    infl_mesh  = fsaverage.infl_left
+from nilearn import plotting
+from nilearn.image import new_img_like
+from matplotlib.lines import Line2D
+from matplotlib.colors import ListedColormap
+import numpy as np
+import matplotlib.pyplot as plt
 
-elif HEMI == 'right':
-    sulc       = fsaverage.sulc_right
-    mesh       = fsaverage.pial_right
-    white_mesh = fsaverage.white_right
-    infl_mesh  = fsaverage.infl_right
+# ------------------------------------------------------------
+# Get atlas information
+# ------------------------------------------------------------
 
-# Get the list of names with label from the atlas
-atlas_img      = HO_ATLAS_MNI6.maps
-atlas_labels   = HO_ATLAS_MNI6.labels
-label_to_index = {name: i for i, name in enumerate(atlas_labels)}
+atlas_img    = HO_ATLAS_MNI6.maps
+atlas_labels = HO_ATLAS_MNI6.labels
 
-# Get the label of ROIs
+label_to_index = {
+    name: i for i, name in enumerate(atlas_labels)
+}
+
+
+# ------------------------------------------------------------
+# Get ROI indices
+# ------------------------------------------------------------
+
 roi_indices = []
+roi_names   = []
+
 for group, regions in ROIs.items():
     for r in regions:
         if r in label_to_index:
             roi_indices.append(label_to_index[r])
+            roi_names.append(r)
+
 roi_indices = np.array(roi_indices)
 
-# Transfrom volumetric HO-Atlas into urface 
-texture_left = surface.vol_to_surf(
-            atlas_img,
-            surf_mesh     = mesh,
-            inner_mesh    = white_mesh,
-            interpolation = 'nearest',
-            n_samples     = 1
-        )
-roi_map_left = texture_left.copy()
 
-# assign NaN to non ROI regions
-roi_mask                       = np.isin(roi_map_left, roi_indices)
-roi_map_left_masked            = roi_map_left.copy()
-roi_map_left_masked[~roi_mask] = np.nan
+# ------------------------------------------------------------
+# Create volumetric ROI image
+#
+# Each ROI gets a unique integer:
+#   1, 2, 3, ...
+# Background = 0
+# ------------------------------------------------------------
 
- # Specify view angle of the figure
-views = ["lateral", "ventral"]
+atlas_data = atlas_img.get_fdata()
 
-# get color lists
-roi_colors = []
-for roi_name, color in roi_color_map.items():
-    if roi_name in label_to_index:
-        roi_colors.append(color)
+roi_map = np.zeros_like(atlas_data, dtype=np.int16)
 
-# convert original atlas indices to start from 0
-index_map         = {idx: i for i, idx in enumerate(roi_indices)}
-roi_map_reindexed = np.full_like(roi_map_left_masked, np.nan)
-for old_idx, new_idx in index_map.items():
-    roi_map_reindexed[roi_map_left_masked == old_idx] = new_idx
+for new_idx, old_idx in enumerate(roi_indices, start=1):
+    roi_map[atlas_data == old_idx] = new_idx
 
-# prepare legend 
+
+roi_img = new_img_like(
+    atlas_img,
+    roi_map
+)
+
+
+# ------------------------------------------------------------
+# Colors
+# ------------------------------------------------------------
+
+roi_colors = [
+    roi_color_map[r]
+    for r in roi_names
+    if r in roi_color_map
+]
+
+
+# ------------------------------------------------------------
+# Plot glass brain
+# ------------------------------------------------------------
+
+fig = plt.figure(figsize=(8, 6))
+
+display = plotting.plot_glass_brain(
+    roi_img,
+    display_mode="l",
+    colorbar=False,
+    cmap= ListedColormap(["white"] + roi_colors),
+    threshold=0.5,
+    plot_abs=False,
+    black_bg=False,
+    figure=fig
+)
+
+# ------------------------------------------------------------
+# Overlay black ROI boundaries
+# ------------------------------------------------------------
+
+display.add_contours(
+    roi_img,
+    colors="black",
+    linewidths=2.5,
+)
+# ------------------------------------------------------------
+# Add legend
+# ------------------------------------------------------------
+
 legend_handles = [
     Line2D(
         [0], [0],
-        color = color,
-        lw    = 2, # line width
-        label = roi_name
+        marker='o',
+        color='none',
+        markerfacecolor=color,
+        markeredgecolor=color,
+        markersize=15,
+        label=roi_name
     )
-    for roi_name, color in roi_color_map.items()
-    if roi_name in label_to_index
+    for roi_name, color in zip(roi_names, roi_colors)
 ]
 
-# Build colormap
-cmap   = ListedColormap(roi_colors)
-levels = list(range(len(roi_colors)))
 
-# Create one figure with two sub-panels
-fig  = plt.figure(figsize=(7, 5))
-axes = [
-    fig.add_subplot(1, 2, 1, projection='3d'),
-    fig.add_subplot(1, 2, 2, projection='3d')
-]
-for ax, v in zip(axes, views):
-    # plot ROIs with contours on surface
+fig.legend(
+    handles=legend_handles,
+    loc="center left",
+    bbox_to_anchor=(1, 0.5),
+    frameon=False,
+    ncol=1,
+    fontsize=20,
+    handletextpad=0.5
+)
 
-    plotting.plot_surf_contours(
-        surf_mesh = infl_mesh,
-        roi_map   = roi_map_reindexed,
-        hemi      = HEMI,
-        view      = v,
-        levels    = levels,
-        colors    = roi_colors,
-        axes      = ax
-    )
-    # specify legend locations
-    if v   == 'lateral':
-        legend_handles_clop = legend_handles[:7]
-        bbox_to_anchor      = (0.05, 0.30)
-    elif v == 'ventral':
-        legend_handles_clop = legend_handles[7:]
-        bbox_to_anchor      = (0.55, 0.30)
-
-    # add legend
-    fig.legend(
-        handles        = legend_handles_clop,
-        loc            = "upper left",        # position
-        bbox_to_anchor = bbox_to_anchor,
-        frameon        = False,
-        ncol           = 1,
-        columnspacing  = 1.5,   # spacing between columns
-        handletextpad  = 0.5,    # spacing between line and text
-        fontsize       = 9
-    )
 plt.tight_layout()
 
-# save the figure
+
+# ------------------------------------------------------------
+# Save figure
+# ------------------------------------------------------------
+
 roi_path = FIG_DIR / 'multimodal'
 roi_path.mkdir(exist_ok=True, parents=True)
-path     = roi_path / f"{HEMI}_ROIs.pdf"
+
+path = roi_path / f"{HEMI}_ROIs_glassbrain.pdf"
+
 plt.savefig(
     path,
-    format      = 'pdf',
-    dpi         = 300,
-    transparent = True,
-    bbox_inches = 'tight',
-    pad_inches  = 0.3
+    format='pdf',
+    dpi=300,
+    transparent=True,
+    bbox_inches='tight',
+    pad_inches=0.3
 )
-print(f"\nSuccessful: {path} is saved ")
-plt.show()
 
+print(f"\nSuccessful: {path} is saved")
+
+plt.show()
 
 
 # %%
@@ -250,7 +280,7 @@ subject_names = [p.name.replace('sub-', '') for p in subjects]
 all_results   = {}
 # subject loop
 for subject in subjects:
-    # subject = subjects[18]
+    # subject = subjects[0]
     glm_path  = subject / MODEL / SPACE / f'FWHM_{int(FWHM_SMOOTHING)}'
     folders   = [p for p in glm_path.rglob('*') if p.is_dir()]
 
@@ -295,7 +325,8 @@ for subject in subjects:
             for p in combined
         ])
         stds           = np.std(vec, axis=1)
-        idx            = np.where(stds==0)[0]
+        # idx            = np.where(stds==0)[0]
+        idx = np.where(np.isclose(stds, 0, atol=1e-8))[0]
         bad_paths      = [combined[i] for i in idx]
         bad_runs       = {p.parts[-2] for p in bad_paths}  # extracts "run-08"
         filtered_paths = [
@@ -349,7 +380,7 @@ for subject in subjects:
             # save the figure
             roi_path = FIG_DIR / 'multimodal'
             roi_path.mkdir(exist_ok=True, parents=True)
-            path     = roi_path / f"{HEMI}_RDM_{title}.pdf"
+            path     = roi_path / f"{HEMI}_RDM_{title}_FWHM_{int(FWHM_SMOOTHING)}.pdf"
             plt.savefig(
                 path,
                 format      = 'pdf',
@@ -447,7 +478,7 @@ df          = pd.DataFrame(rows)
 df['grade'] = df['subject'].str.extract(r'-(\d+)').astype(int) // 100
 
 # save it as csv file
-path      = OUT_DIR / 'multimodal' / f'{HEMI}_RDM_metrics.csv'
+path      = OUT_DIR / 'multimodal' / f'{HEMI}_RDM_metrics_FWHM_{int(FWHM_SMOOTHING)}.csv'
 df.to_csv(path, index=False)
 
 # %%

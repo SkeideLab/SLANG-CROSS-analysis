@@ -46,8 +46,8 @@ CONTRASTS      = [
                 'images_words-images_pseudo',
                 'audios_words-audios_pseudo',
                 ]
-FWHM_SMOOTHING = 9.0 # 6.0, 9.0, 12.0
-HEMI           = 'right' 
+FWHM_SMOOTHING = 5.0 # 6.0, 9.0, 12.0
+HEMI           = 'left' 
 EXC_SUBJECTS   = [
                 '108', '111', '113', '116', '118', '120', '121', '122', '124', '125', '126', '128', 
                 '201', '205', '206', '208', '220', '225', '226', '227', 
@@ -117,7 +117,7 @@ for subject in subjects:
             for p in combined
         ])
         stds           = np.std(vec, axis=1)
-        idx            = np.where(stds==0)[0]
+        idx            = np.where(np.isclose(stds, 0, atol=1e-8))[0]
         bad_paths      = [combined[i] for i in idx]
         bad_runs       = {p.parts[-2] for p in bad_paths}  # extracts "run-08"
         filtered_paths = [
@@ -270,7 +270,7 @@ df          = pd.DataFrame(rows)
 df['grade'] = df['subject'].str.extract(r'-(\d+)').astype(int) // 100
 
 # save it as csv file
-path      = OUT_DIR / 'multimodal' / f'{HEMI}_RDM_metrics_supplements.csv'
+path      = OUT_DIR / 'multimodal' / f'{HEMI}_RDM_metrics_supplements_FWHM_{int(FWHM_SMOOTHING)}.csv'
 df.to_csv(path, index=False)
 print(f"Data is saved in the path: {path}")
 

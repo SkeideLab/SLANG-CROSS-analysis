@@ -37,7 +37,7 @@ SESSION        = '01'
 TASK           = 'language'
 BLOCKWISE      = False
 TR             = 2.0
-SMOOTHING_FWHM = 9.0 # 6, 9, 12
+SMOOTHING_FWHM = 8.0 # 6, 9, 12
 HRF_MODEL      = 'spm'
 DRIFT_MODEL    = 'cosine'
 HIGH_PASS      = 0.01
@@ -213,6 +213,16 @@ layout   = BIDSLayout(BIDS_DIR, derivatives=FMRIPRE_DIR, database_path=PYBIDS_DI
 
 # Get all subject list
 subjects = layout.get_subjects()  # returns a list like ['01', '02', '03', ...]
+
+""" ##### Repair
+# Find the starting index for '211'
+if '211' in subjects:
+    start_idx = subjects.index('211')
+    subjects = subjects[:start_idx]  # Keep only '211' and everything after it
+else:
+    print("Warning: Subject '211' not found in the layout.")
+##### Repair """
+
 for subject in subjects:
     if subject in EXC_SUBJECTS:
         continue
@@ -317,6 +327,7 @@ for subject in subjects:
             fmri_glm = FirstLevelModel(  
                 standardize=STANDARDIZE, # percent signal change
                 smoothing_fwhm=SMOOTHING_FWHM,
+                # smoothing_fwhm=None,
                 n_jobs=N_JOBS,
                 mask_img=mask_img,
                 minimize_memory=False
@@ -340,9 +351,14 @@ for subject in subjects:
 
             output_b = run_dir / f"{contrast_no_space}_beta.nii.gz"
             output_v = run_dir / f"{contrast_no_space}_var.nii.gz"
+            output_t = run_dir / f"{contrast_no_space}_t.nii.gz"
+            output_z = run_dir / f"{contrast_no_space}_z.nii.gz"
 
             summary_stats["effect_size"].to_filename(output_b)
             summary_stats["effect_variance"].to_filename(output_v)
+            summary_stats["stat"].to_filename(output_t)
+            summary_stats["z_score"].to_filename(output_z)
+            
 
             # LOOP END
 
