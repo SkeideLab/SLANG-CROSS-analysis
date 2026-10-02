@@ -9,8 +9,8 @@ This repository contains the workflow used in the SLANG-CROSS project, including
 
 - Regions of interest (ROIs)
 - Subject-level fMRI: general linear model (GLM)
-- Group-level fMRI: representational dissimilarity matrix (RDM)
-- Group-level fMRI: one-sample t-test and multiple linear regression
+- Group-level fMRI: Similarity
+- Group-level fMRI: Coactivation
 - Figure generation
 
 ---
