@@ -1,19 +1,17 @@
 # %% [markdown]
-# ## fMRI Group-level Language RDM (2nd-level)
+# ## fMRI Group-level audiovisual coactivation (2nd-level)
 #
 # **Pipeline Overview**
 # 1. === STEP 1 ===: Install packages
 # 2. === STEP 2 ===: Set parameters
-# 3. === STEP 3 ===: visualize ROIs
-# 4. === STEP 4 ===: Compute language RDM for each subject
-# 5. === STEP 5 ===: Save the RDMs as csv file
+# 3. === STEP 3 ===: Compute audiovisual coactivation for each subject
+# 4. === STEP 4 ===: Output the results
 
 
 
 # %%
 # 1. === STEP 1 ===: Install packages
 # -----------------------------------------------
-
 # install necessary packages
 import sys
 from pathlib import Path
@@ -37,18 +35,13 @@ from nilearn.glm import threshold_stats_img
 # %%
 # 2. === STEP 2 ===: Set parameters
 # -----------------------------------------------
-
 MODEL          = 'glm'
 SPACE          = 'MNIPediatricAsym_cohort-4_res-2'
 CONTRASTS      = [
                 'images_words', 
                 'audios_words',
-                'images_pseudo',
-                'audios_pseudo',
-                'images_words-images_pseudo',
-                'audios_words-audios_pseudo',
                 ]
-FWHM_SMOOTHING = 8.0 # 6.0, 9.0, 12.0
+FWHM_SMOOTHING = 8.0 
 HEMI           = 'left'
 P_CORRECTION   = 0.05 
 EXC_SUBJECTS   = [
@@ -126,9 +119,11 @@ for group, regions in ROIs.items():
 roi_indices = np.array(roi_indices)
 
 
+
+
 # %%
-# 4. === STEP 4 ===: Compute language RDM for each subject
-# -----------------------------------------------
+# 3. === STEP 3 ===: Compute audiovisual coactivation for each subject
+# ---------------------------------------------------------------------
 # ROIs
 roi_names     = []
 for group, regions in ROIs.items():
@@ -197,9 +192,8 @@ for subject in subjects:
         # Number of significant voxels for each run
         written_n_voxels = np.zeros(n_runs, dtype=int)
         spoken_n_voxels  = np.zeros(n_runs, dtype=int)
-        # ----------------------------------------------------
+
         # Count significant voxels within ROI for each run
-        # ----------------------------------------------------
         for i in range(n_runs):
 
             # Written
@@ -233,19 +227,13 @@ for subject in subjects:
 
         mean_spoken = round(spoken_n_voxels.mean())
         std_spoken  = spoken_n_voxels.std()
-        
-        # diagonal = np.diag(overlap_matrix)
-        # mean_overlap = round(diagonal.mean())
-        # std_overlap  = diagonal.std()
 
         n_roi_voxels = np.sum(roi_data)
         percet_overlap = (mean_overlap / n_roi_voxels)*100
         percet_written = (mean_written / n_roi_voxels)*100
         percet_spoken = (mean_spoken / n_roi_voxels)*100
-        # ----------------------------------------------------
-        # Store results
-        # ----------------------------------------------------
 
+        # Store results
         all_results.append({
             "subject": sub_name,
             "roi": roi_name,
@@ -265,14 +253,11 @@ for subject in subjects:
             "perc_spoken": percet_spoken,
                 })
 
-# %
-# ----------------------------------------------------
-# Convert to DataFrame and save
-# ----------------------------------------------------
+# %%
+# 4. === STEP 4 ===: Output the results
+# -----------------------------------
 results_df = pd.DataFrame(all_results)
-
 # save it as csv file
 path      = OUT_DIR / 'multimodal' / f'{HEMI}_Coactivation_metrics_FWHM_{int(FWHM_SMOOTHING)}.csv'
 results_df.to_csv(path, index=False)
 
-# %%

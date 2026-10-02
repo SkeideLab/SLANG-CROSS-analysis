@@ -1,21 +1,18 @@
 # %% [markdown]
-# ## fMRI Group-level Statistics RDM (2nd-level)
+# ## fMRI Group-level Coactivation Statistics (2nd-level)
 #
 # **Pipeline Overview**
 # 1. === STEP 1 ===: Install packages
 # 2. === STEP 2 ===: Set parameters
-# 3. === STEP 3 ===: read RDM csv file and remove outliers
-# 4. === STEP 4 ===: Distirbution of RDM metrcis 
-# 5. === STEP 5 ===: Distirbution of RDM metrcis by grade
-# 6. === STEP 6 ===: Statistics: One-sample t-tetst
-# 7. === STEP 7 ===: Statistics: Linear regression
+# 3. === STEP 3 ===: read the csv file and remove outliers
+# 4. === STEP 4 ===: Spearman's correlation for each ROI
+# 5. === STEP 5 ===: Output plots 
 
 
 
 # %%
 # 1. === STEP 1 ===: Install packages
 # -----------------------------------------------
-
 # install necessary packages
 import sys
 from pathlib import Path
@@ -33,6 +30,7 @@ MASK_DIR     = TEMP_DIR  / 'mask'
 sys.path.append(str(SCRIP_DIR))
 import my_packages
 from scipy.stats import zscore
+from scipy.stats import spearmanr
 from my_packages import *
 
 
@@ -42,15 +40,7 @@ from my_packages import *
 # -----------------------------------------------
 MODEL          = 'glm'
 SPACE          = 'MNIPediatricAsym_cohort-4_res-2'
-CONTRASTS      = [
-                'images_words', 
-                'audios_words',
-                'images_pseudo',
-                'audios_pseudo',
-                'images_words-images_pseudo',
-                'audios_words-audios_pseudo',
-                ]
-FWHM_SMOOTHING = 5.0 
+FWHM_SMOOTHING = 8.0 
 HEMI           = 'left'
 MODAL          = 'multi' # multi, written, spoken 
 EXC_SUBJECTS   = [
@@ -116,13 +106,13 @@ roi_labels     = {
 
 
 # %%
-# 3. === STEP 3 ===: read RDM csv file 
+# 3. === STEP 3 ===: read the csv file 
 # -----------------------------------------------
 # --- read RDM ---
-path     = OUT_DIR / 'multimodal' / f'{HEMI}_RDM_metrics_FWHM_{int(FWHM_SMOOTHING)}.csv'
+path     = OUT_DIR / 'multimodal' / f'{HEMI}_RDM_metrics_FWHM_5.csv'
 df_csv   = pd.read_csv(path)
 # --- read Coactivation ---
-coactive_path = OUT_DIR / 'multimodal' / f'{HEMI}_Coactivation_metrics_FWHM_8.csv'
+coactive_path = OUT_DIR / 'multimodal' / f'{HEMI}_Coactivation_metrics_FWHM_{int(FWHM_SMOOTHING)}.csv'
 df_coactive   = pd.read_csv(coactive_path)
 df_coactive = df_coactive[["subject", "mean_overlap", "mean_written_voxels", "mean_spoken_voxels", "roi"]]
 df_coactive["mean_overlap_log"] = (
@@ -225,67 +215,10 @@ for cond in conditions:
     df_clean_dict[cond] = df_cond
 
 
+
 # %%
-# -------------------------------------------------------------------------
-# 各ROIごとに word_multi と mean_overlap の Spearman 相関
-# 学年は分けない
-# -------------------------------------------------------------------------
-
-results = []
-
-for roi, df_roi in df.groupby('roi'):
-
-    # 欠測値を除外
-    tmp = df_roi[['word_multi', 'mean_overlap']].dropna()
-
-    # Spearman correlation
-    corr = pg.corr(
-        x=tmp['word_multi'],
-        y=tmp['mean_overlap'],
-        method='spearman',
-        alternative='two-sided'
-    )
-
-    results.append({
-        'roi': roi,
-        'n': corr['n'].iloc[0],
-        'r': corr['r'].iloc[0],
-        'p-unc': corr['p-val'].iloc[0]
-    })
-
-# DataFrame化
-result_df = pd.DataFrame(results)
-
-# -------------------------------------------------------------------------
-# 12 ROIについて Benjamini-Hochberg FDR補正
-# -------------------------------------------------------------------------
-
-reject, p_corr, _, _ = multipletests(
-    result_df['p-unc'],
-    method='fdr_bh'
-)
-
-result_df['p-corr'] = p_corr
-result_df['significant'] = reject
-
-# 相関係数の大きい順
-result_df = result_df.sort_values('r', ascending=False).reset_index(drop=True)
-
-result_df
-
-
-
-import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
-from scipy.stats import spearmanr
-from statsmodels.stats.multitest import multipletests
-
-# -------------------------------------------------------------------------
-# Calculate Spearman correlation for each ROI
-# -------------------------------------------------------------------------
-
+# 4. === STEP 4 ===: Spearman correlation for each ROI 
+# ----------------------------------------------------
 results = []
 roi_data = {}
 
@@ -323,10 +256,12 @@ result_df = result_df.sort_values('r', ascending=False).reset_index(drop=True)
 
 print(result_df)
 
+
+
+
 # %%
-# -------------------------------------------------------------------------
-# Plot: one scatter plot for each ROI
-# -------------------------------------------------------------------------
+# 5. === STEP 5 ===: Output plots 
+# --------------------------------
 roi_color_map  = {
                     "Inferior Frontal Gyrus, pars triangularis": "darkgoldenrod",
                     "Inferior Frontal Gyrus, pars opercularis": "goldenrod",
@@ -371,11 +306,6 @@ fig, axes = plt.subplots(
 
 axes = np.asarray(axes).flatten()
 
-
-# ============================================================
-# Determine common x- and y-axis limits across all ROIs
-# ============================================================
-
 all_x = pd.concat(
     [roi_data[roi]['word_multi'] for roi in roi_order]
 ).dropna()
@@ -395,11 +325,7 @@ y_pad = (y_max - y_min) * 0.05
 xlim = (x_min - x_pad, x_max + x_pad)
 ylim = (y_min - y_pad, y_max + y_pad)
 
-
-# ============================================================
-# Plot
-# ============================================================
-
+# plot
 for i, roi in enumerate(roi_order):
 
     ax = axes[i]
@@ -490,98 +416,3 @@ plt.savefig(
 
 plt.show()
 
-
-
-
-
-
-# %%
-n_rois = len(roi_data)
-
-ncols = 3
-nrows = int(np.ceil(n_rois / ncols))
-
-fig, axes = plt.subplots(
-    nrows=nrows,
-    ncols=ncols,
-    figsize=(15, 4.5 * nrows)
-)
-
-axes = np.asarray(axes).flatten()
-
-for i, roi in enumerate(result_df['roi']):
-
-    ax = axes[i]
-
-    tmp = roi_data[roi]
-
-    # Scatter plot
-    sns.scatterplot(
-        data=tmp,
-        x='word_multi',
-        y='mean_overlap',
-        ax=ax,
-        s=55,
-        alpha=0.75
-    )
-
-    # Optional linear regression line for visualization only
-    sns.regplot(
-        data=tmp,
-        x='word_multi',
-        y='mean_overlap',
-        scatter=False,
-        ax=ax,
-        ci=95
-    )
-
-    # Get statistics
-    row = result_df[result_df['roi'] == roi].iloc[0]
-
-    r = row['r']
-    p_unc = row['p-unc']
-    p_corr = row['p-corr']
-    n = row['n']
-
-    # Significance marker
-    if p_corr < 0.001:
-        sig = '***'
-    elif p_corr < 0.01:
-        sig = '**'
-    elif p_corr < 0.05:
-        sig = '*'
-    else:
-        sig = 'n.s.'
-
-    # ROI title
-    ax.set_title(
-        f"{roi}\n"
-        f"Spearman ρ = {r:.2f}, FDR p = {p_corr:.3f} {sig}, n = {n}",
-        fontsize=10
-    )
-
-    ax.set_xlabel('Cross-modal RSA (word_multi)')
-    ax.set_ylabel('Mean overlap')
-
-    ax.grid(alpha=0.2)
-
-# Remove unused panels
-for j in range(i + 1, len(axes)):
-    fig.delaxes(axes[j])
-
-plt.tight_layout()
-
-plt.show()
-
-
-
-
-
-
-
-
-
-
-
-
-# %%

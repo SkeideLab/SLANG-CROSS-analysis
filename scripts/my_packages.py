@@ -30,3 +30,8 @@ from matplotlib.patches import Patch
 from scipy.spatial.distance import euclidean, cosine
 from scipy.stats import spearmanr
 from scipy.spatial.distance import pdist, squareform
+from nilearn import plotting
+from matplotlib.lines import Line2D
+from matplotlib.colors import ListedColormap
+import numpy as np
+import matplotlib.pyplot as plt

@@ -1,19 +1,18 @@
 # %% [markdown]
-# ## fMRI Group-level Language RDM (2nd-level)
+# ## fMRI Group-level cross-modal and within-modal similarity (2nd-level)
 #
 # **Pipeline Overview**
 # 1. === STEP 1 ===: Install packages
 # 2. === STEP 2 ===: Set parameters
-# 3. === STEP 3 ===: Compute language RDM for each subject
-# 4. === STEP 4 ===: Save the RDMs as csv file
+# 3. === STEP 3 ===: Plot ROIs
+# 4. === STEP 4 ===: Compute similarity for each subject
+# 5. === STEP 5 ===: Save the results
 
 
 
 # %%
 # 1. === STEP 1 ===: Install packages
 # -----------------------------------------------
-
-# install necessary packages
 import sys
 from pathlib import Path
 # Specify path
@@ -29,13 +28,14 @@ MASK_DIR     = TEMP_DIR  / 'mask'
 sys.path.append(str(SCRIP_DIR))
 import my_packages
 from my_packages import *
+from nilearn.image import new_img_like
+
 
 
 
 # %%
 # 2. === STEP 2 ===: Set parameters
 # -----------------------------------------------
-
 MODEL          = 'glm'
 SPACE          = 'MNIPediatricAsym_cohort-4_res-2'
 CONTRASTS      = [
@@ -55,14 +55,173 @@ EXC_SUBJECTS   = [
                 ]
 HO_ATLAS_MNI6  = datasets.fetch_atlas_harvard_oxford('cort-maxprob-thr25-2mm') # Harvard-Oxford MNI6Asym
 atlas_labels   = HO_ATLAS_MNI6.lut
+ROIs           = {
+                    "IFG": [
+                        "Inferior Frontal Gyrus, pars triangularis",
+                        "Inferior Frontal Gyrus, pars opercularis"
+                    ],
+                    "IPG": [
+                        "Supramarginal Gyrus, anterior division",
+                        "Supramarginal Gyrus, posterior division",
+                        "Angular Gyrus"
+                    ],
+                    "STG": [
+                        "Superior Temporal Gyrus, anterior division",
+                        "Superior Temporal Gyrus, posterior division"
+                    ],
+                    "MTG": [
+                        "Middle Temporal Gyrus, anterior division",
+                        "Middle Temporal Gyrus, posterior division",
+                        "Middle Temporal Gyrus, temporooccipital part"
+                    ],
+                    "Fusiform": [
+                        "Temporal Fusiform Cortex, posterior division",
+                        "Temporal Occipital Fusiform Cortex",
+                    ]
+                }
+roi_color_map  = {
+                    "Inferior Frontal Gyrus, pars triangularis": "darkgoldenrod",
+                    "Inferior Frontal Gyrus, pars opercularis": "goldenrod",
+                    "Supramarginal Gyrus, anterior division": "royalblue",
+                    "Supramarginal Gyrus, posterior division": "dodgerblue",
+                    "Angular Gyrus": "navy",
+                    "Superior Temporal Gyrus, anterior division": "mediumvioletred",
+                    "Superior Temporal Gyrus, posterior division": "darkmagenta",
+                    "Middle Temporal Gyrus, anterior division": "deeppink",
+                    "Middle Temporal Gyrus, posterior division": "hotpink",
+                    "Middle Temporal Gyrus, temporooccipital part": "palevioletred",
+                    "Temporal Fusiform Cortex, posterior division": "green",
+                    "Temporal Occipital Fusiform Cortex": "limegreen",
+                    }
+roi_labels     = {
+                    "Inferior Frontal Gyrus, pars triangularis": "trIFG",
+                    "Inferior Frontal Gyrus, pars opercularis": "opIFG",
+                    "Supramarginal Gyrus, anterior division": "aSMG",
+                    "Supramarginal Gyrus, posterior division": "pSMG",
+                    "Angular Gyrus": "AG",
+                    "Superior Temporal Gyrus, anterior division": "aSTG",
+                    "Superior Temporal Gyrus, posterior division": "pSTG",
+                    "Middle Temporal Gyrus, anterior division": "aMTG",
+                    "Middle Temporal Gyrus, posterior division": "pMTG",
+                    "Middle Temporal Gyrus, temporooccipital part": "toMTG",
+                    "Temporal Fusiform Cortex, posterior division": "pTFC",
+                    "Temporal Occipital Fusiform Cortex": "TOFC",
+                    }
+
 
 
 
 # %%
-# 3. === STEP 3 ===: Compute language RDM for each subject
-# -----------------------------------------------
+# 3. === STEP 3 ===: Plot ROIs
+# --------------------------------------------------
+atlas_img    = HO_ATLAS_MNI6.maps
+atlas_labels = HO_ATLAS_MNI6.labels
+
+label_to_index = {
+    name: i for i, name in enumerate(atlas_labels)
+}
+
+roi_indices = []
+roi_names   = []
+
+for group, regions in ROIs.items():
+    for r in regions:
+        if r in label_to_index:
+            roi_indices.append(label_to_index[r])
+            roi_names.append(r)
+
+roi_indices = np.array(roi_indices)
+
+atlas_data = atlas_img.get_fdata()
+
+roi_map = np.zeros_like(atlas_data, dtype=np.int16)
+
+for new_idx, old_idx in enumerate(roi_indices, start=1):
+    roi_map[atlas_data == old_idx] = new_idx
+
+roi_img = new_img_like(
+    atlas_img,
+    roi_map
+)
+
+roi_colors = [
+    roi_color_map[r]
+    for r in roi_names
+    if r in roi_color_map
+]
+
+fig = plt.figure(figsize=(8, 6))
+
+display = plotting.plot_glass_brain(
+    roi_img,
+    display_mode="l",
+    colorbar=False,
+    cmap= ListedColormap(["white"] + roi_colors),
+    threshold=0.5,
+    plot_abs=False,
+    black_bg=False,
+    figure=fig
+)
+
+display.add_contours(
+    roi_img,
+    colors="black",
+    linewidths=2.5,
+)
+
+legend_handles = [
+    Line2D(
+        [0], [0],
+        marker='o',
+        color='none',
+        markerfacecolor=color,
+        markeredgecolor=color,
+        markersize=15,
+        label=roi_name
+    )
+    for roi_name, color in zip(roi_names, roi_colors)
+]
+
+fig.legend(
+    handles=legend_handles,
+    loc="center left",
+    bbox_to_anchor=(1, 0.5),
+    frameon=False,
+    ncol=1,
+    fontsize=20,
+    handletextpad=0.5
+)
+
+plt.tight_layout()
+roi_path = FIG_DIR / 'multimodal'
+roi_path.mkdir(exist_ok=True, parents=True)
+
+path = roi_path / f"{HEMI}_ROIs_glassbrain.pdf"
+
+plt.savefig(
+    path,
+    format='pdf',
+    dpi=300,
+    transparent=True,
+    bbox_inches='tight',
+    pad_inches=0.3
+)
+
+print(f"\nSuccessful: {path} is saved")
+plt.show()
+
+
+
+
+
+# %%
+# 4. === STEP 4 ===: Compute similarity for each subject
+# ------------------------------------------------------
 # ROIs
-roi_names     = [label for label in atlas_labels['name'] if label != 'Background']
+roi_names     = []
+for group, regions in ROIs.items():
+    for r in regions:
+        roi_names.append(r)
 
 # Subjects
 subjects      = sorted(DERIV_DIR.glob(f"sub-*"))
@@ -99,10 +258,11 @@ for subject in subjects:
         spoken_pseudo_beta_lists.append(spoken_pseudo_beta_path)
         written_semantic_beta_lists.append(written_semantic_beta_path)
         spoken_semantic_beta_lists.append(spoken_semantic_beta_path)
-    
+
     # count the total number of runs available
     n_run = len(written_beta_lists)
 
+    # combine all
     combined = written_beta_lists + spoken_beta_lists + written_pseudo_beta_lists + spoken_pseudo_beta_lists + written_semantic_beta_lists + spoken_semantic_beta_lists
 
     # Pick ROi and vectorize 
@@ -117,7 +277,8 @@ for subject in subjects:
             for p in combined
         ])
         stds           = np.std(vec, axis=1)
-        idx            = np.where(np.isclose(stds, 0, atol=1e-8))[0]
+        # idx            = np.where(stds==0)[0]
+        idx = np.where(np.isclose(stds, 0, atol=1e-8))[0]
         bad_paths      = [combined[i] for i in idx]
         bad_runs       = {p.parts[-2] for p in bad_paths}  # extracts "run-08"
         filtered_paths = [
@@ -127,7 +288,7 @@ for subject in subjects:
 
         # Skip if nothing left after filtering
         if not filtered_paths:
-            # print(f"Skipping {roi_name}: no valid paths after filtering")
+            print(f"Skipping {roi_name}: no valid paths after filtering")
             continue
         
         vector[roi_name] = np.vstack([
@@ -136,10 +297,6 @@ for subject in subjects:
         ])
     
     # Representational Dissimilarity Matrix (written vs spoken)
-    """     corr_matrices = {
-        roi: 1 - np.corrcoef(data)
-        for roi, data in vector.items()
-    } """
     corr_dis_matrices = {
         roi: 1 - np.corrcoef(data)
         for roi, data in vector.items()
@@ -151,38 +308,41 @@ for subject in subjects:
         for roi, data in vector.items()
     }
 
-    """     # Visualize RDM
-    roi_target = roi_names[0]
-    corr       = corr_matrices[roi_target]
+    if subject.name == 'sub-202':
+        # Visualize RDM
+        for roi_name in roi_names:
+            roi_target = roi_name
+            title      = roi_labels[roi_name]
+            corr       = corr_dis_matrices[roi_target]
 
-    plt.imshow(corr, vmin=0, vmax=2)
-    cbar       = plt.colorbar(label='Dissimilarity (1 - r)')
-    cbar.set_ticks([0, 1, 2])
-    cbar.set_ticklabels(['0', '1', '2'])
-    # ticks starting from 1
-    n          = corr.shape[0]
-    # repeating 1 – max(run) 
-    labels = np.tile(np.arange(1, n//len(CONTRASTS) + 1), len(CONTRASTS))
-    plt.title(roi_target, fontsize=14)
-    plt.xticks(range(n), labels)
-    plt.yticks(range(n), labels)
-    plt.xlabel('Run', fontsize=11)
-    plt.ylabel('Run', fontsize=11) """
-
-    """ # save the figure
-    roi_path = FIG_DIR / 'multimodal'
-    roi_path.mkdir(exist_ok=True, parents=True)
-    path     = roi_path / "RDM.pdf"
-    plt.savefig(
-        path,
-        format      = 'pdf',
-        dpi         = 300,
-        transparent = True,
-        bbox_inches = 'tight',
-        pad_inches  = 0.3
-    )
-    print(f"\nSuccessful: Figure RDM is saved ") 
-    plt.show() """
+            plt.imshow(corr, vmin=0, vmax=2)
+            cbar       = plt.colorbar(label='Dissimilarity (1 - r)')
+            cbar.set_ticks([0, 1, 2])
+            cbar.set_ticklabels(['0', '1', '2'])
+            # ticks starting from 1
+            n          = corr.shape[0]
+            # repeating 1 – max(run) 
+            labels = np.tile(np.arange(1, n//len(CONTRASTS) + 1), len(CONTRASTS))
+            plt.title(title, fontsize=35)
+            plt.xticks(range(n), labels, fontsize=10)
+            plt.yticks(range(n), labels, fontsize=10)
+            plt.xlabel('Run', fontsize=20)
+            plt.ylabel('Run', fontsize=20)
+            plt.tight_layout()
+            # save the figure
+            roi_path = FIG_DIR / 'multimodal'
+            roi_path.mkdir(exist_ok=True, parents=True)
+            path     = roi_path / f"{HEMI}_RDM_{title}_FWHM_{int(FWHM_SMOOTHING)}.pdf"
+            plt.savefig(
+                path,
+                format      = 'pdf',
+                dpi         = 300,
+                transparent = True,
+                bbox_inches = 'tight',
+                pad_inches  = 0.3
+            )
+            print(f"\nSuccessful: Figure RDM is saved ")
+            plt.show()
 
     # %
     # Compute each RDM metrics
@@ -205,7 +365,7 @@ for subject in subjects:
                 if j > i:
                     base_spoken_index.append((i, j))
 
-        base_multi_index  = []
+        base_multi_index   = []
         for i in spoken:
             for j in word:
                 if j >= i - n_runs + 1:
@@ -246,17 +406,14 @@ for subject in subjects:
             "semantic_multi": np.mean([corr[i, j] for i, j in idx_semantic_multi]),
             "number_run": n_run,
         }
-
+        
     print(f"{subject.name} is done")
     all_results[subject.name] = results
 
 
-
 # %
-# 4. === STEP 4 ===: Save the RDMs as csv file
+# 5. === STEP 5 ===: Save the results
 # -----------------------------------------------
-
-# convert to pandas dataframe
 rows        = []
 for subject, rois in all_results.items():
     for roi, metrics in rois.items():
@@ -270,8 +427,5 @@ df          = pd.DataFrame(rows)
 df['grade'] = df['subject'].str.extract(r'-(\d+)').astype(int) // 100
 
 # save it as csv file
-path      = OUT_DIR / 'multimodal' / f'{HEMI}_RDM_metrics_supplements_FWHM_{int(FWHM_SMOOTHING)}.csv'
+path      = OUT_DIR / 'multimodal' / f'{HEMI}_RDM_metrics_FWHM_{int(FWHM_SMOOTHING)}.csv'
 df.to_csv(path, index=False)
-print(f"Data is saved in the path: {path}")
-
-# %%
